@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -11,7 +12,13 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body className="bg-neutral-950 text-neutral-100 antialiased">{children}</body>
+      <body className="bg-neutral-950 text-neutral-100 antialiased">
+        <Script
+          src="https://unpkg.com/maplibre-gl@6.9.1/dist/maplibre-gl.js"
+          strategy="beforeInteractive"
+        />
+        {children}
+      </body>
     </html>
   );
 }
