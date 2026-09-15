@@ -14,7 +14,7 @@ export default function RootLayout({
     <html lang="en">
       <body className="bg-neutral-950 text-neutral-100 antialiased">
         <Script
-          src="https://unpkg.com/maplibre-gl@6.9.1/dist/maplibre-gl.js"
+          src="https://unpkg.com/maplibre-gl@5.6.1/dist/maplibre-gl.js"
           strategy="beforeInteractive"
         />
         {children}
