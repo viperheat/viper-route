@@ -2,15 +2,31 @@
 
 import { useEffect, useRef, useState } from "react";
 import "maplibre-gl/dist/maplibre-gl.css";
+import type { FeatureCollection } from "geojson";
+import stationsData from "@/data/stations.json";
 
 // Fallback center: Midtown Manhattan. Coordinates are [longitude, latitude].
 const NYC_FALLBACK: [number, number] = [-73.9857, 40.7484];
+
+type Station = { id: string; name: string; lat: number; lon: number };
+const STATIONS = stationsData as Station[];
+
+// Build the station points once (GeoJSON the map can render as one layer).
+const STATION_FC: FeatureCollection = {
+  type: "FeatureCollection",
+  features: STATIONS.map((s) => ({
+    type: "Feature",
+    geometry: { type: "Point", coordinates: [s.lon, s.lat] },
+    properties: { name: s.name },
+  })),
+};
 
 // MapLibre is loaded from a CDN (see the <Script> in layout.tsx), so it lives
 // on window. We pull its TYPES from the installed npm package for safety.
 declare global {
   interface Window {
     maplibregl: typeof import("maplibre-gl");
+    __vrMap?: import("maplibre-gl").Map;
   }
 }
 
@@ -24,6 +40,61 @@ export default function MapView() {
 
   useEffect(() => {
     let cancelled = false;
+
+    function addStations(
+      maplibregl: typeof import("maplibre-gl"),
+      map: import("maplibre-gl").Map
+    ) {
+      if (map.getSource("stations")) return;
+      map.addSource("stations", { type: "geojson", data: STATION_FC });
+      map.addLayer({
+        id: "station-dots",
+        type: "circle",
+        source: "stations",
+        paint: {
+          // Dots grow as you zoom in.
+          "circle-radius": [
+            "interpolate",
+            ["linear"],
+            ["zoom"],
+            10, 2,
+            13, 4,
+            15, 6,
+            17, 8,
+          ],
+          "circle-color": "#ffffff",
+          "circle-stroke-color": "#10b981", // emerald
+          "circle-stroke-width": 1.5,
+          "circle-opacity": 0.95,
+        },
+      });
+
+      // Pointer cursor over stations.
+      map.on("mouseenter", "station-dots", () => {
+        map.getCanvas().style.cursor = "pointer";
+      });
+      map.on("mouseleave", "station-dots", () => {
+        map.getCanvas().style.cursor = "";
+      });
+
+      // Click a station -> popup with its name.
+      map.on("click", "station-dots", (e) => {
+        const f = e.features?.[0];
+        if (!f) return;
+        const name = (f.properties?.name as string) ?? "Station";
+        const geom = f.geometry;
+        const coords =
+          geom.type === "Point"
+            ? (geom.coordinates as [number, number])
+            : [e.lngLat.lng, e.lngLat.lat];
+        new maplibregl.Popup({ offset: 12, closeButton: false })
+          .setLngLat(coords as [number, number])
+          .setHTML(
+            `<div style="font:600 13px system-ui,sans-serif;color:#111">${name}</div>`
+          )
+          .addTo(map);
+      });
+    }
 
     function locateUser(
       maplibregl: typeof import("maplibre-gl"),
@@ -42,7 +113,6 @@ export default function MapView() {
           ];
           map.flyTo({ center: here, zoom: 14, essential: true });
 
-          // "You are here" marker (pulsing dot, styled in globals.css).
           const el = document.createElement("div");
           el.className = "vr-user-dot";
           markerRef.current?.remove();
@@ -53,7 +123,6 @@ export default function MapView() {
           setStatus("located");
         },
         () => {
-          // Denied, unavailable, or timed out — keep the Midtown fallback view.
           if (!cancelled) setStatus("fallback");
         },
         { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
@@ -62,7 +131,6 @@ export default function MapView() {
 
     function init() {
       const maplibregl = window.maplibregl;
-      // The CDN script may not be ready yet on first paint — retry briefly.
       if (!maplibregl) {
         if (!cancelled) setTimeout(init, 100);
         return;
@@ -71,12 +139,12 @@ export default function MapView() {
 
       const map = new maplibregl.Map({
         container: containerRef.current,
-        // OpenFreeMap: free map tiles, no API key needed.
         style: "https://tiles.openfreemap.org/styles/liberty",
         center: NYC_FALLBACK,
         zoom: 12,
       });
       mapRef.current = map;
+      window.__vrMap = map;
 
       map.addControl(new maplibregl.NavigationControl(), "top-right");
       map.addControl(
@@ -87,7 +155,10 @@ export default function MapView() {
         "top-right"
       );
 
-      map.on("load", () => locateUser(maplibregl, map));
+      map.on("load", () => {
+        addStations(maplibregl, map);
+        locateUser(maplibregl, map);
+      });
     }
 
     init();
