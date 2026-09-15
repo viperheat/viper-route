@@ -182,7 +182,7 @@ export default function MapView() {
 
       const map = new maplibregl.Map({
         container: containerRef.current,
-        style: "https://tiles.openfreemap.org/styles/liberty",
+        style: "https://tiles.openfreemap.org/styles/dark",
         center: NYC_FALLBACK,
         zoom: 12,
       });
