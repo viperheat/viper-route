@@ -95,6 +95,54 @@ function nearestStation(lon: number, lat: number): Station {
   return best;
 }
 
+// ---- Live train sprites ----
+type LL = { lat: number; lon: number };
+type AnimTrain = {
+  tripId: string;
+  route: string;
+  color: string;
+  p0: LL;
+  path: { lat: number; lon: number; etaSeconds: number }[];
+};
+
+function lerp(a: LL, b: LL, f: number): LL {
+  return { lat: a.lat + (b.lat - a.lat) * f, lon: a.lon + (b.lon - a.lon) * f };
+}
+
+// Where a train is `elapsed` seconds after its fetch, along its timed waypoints.
+function trainPosAt(t: AnimTrain, elapsed: number): LL {
+  const wp = [
+    { lat: t.p0.lat, lon: t.p0.lon, t: 0 },
+    ...t.path.map((p) => ({ lat: p.lat, lon: p.lon, t: p.etaSeconds })),
+  ];
+  if (wp.length === 1 || elapsed <= 0) return { lat: wp[0].lat, lon: wp[0].lon };
+  for (let i = 0; i < wp.length - 1; i++) {
+    if (elapsed <= wp[i + 1].t) {
+      const span = wp[i + 1].t - wp[i].t || 1;
+      const f = Math.min(1, Math.max(0, (elapsed - wp[i].t) / span));
+      return {
+        lat: wp[i].lat + (wp[i + 1].lat - wp[i].lat) * f,
+        lon: wp[i].lon + (wp[i + 1].lon - wp[i].lon) * f,
+      };
+    }
+  }
+  const last = wp[wp.length - 1];
+  return { lat: last.lat, lon: last.lon };
+}
+
+function trainMarkerEl(route: string, color: string): HTMLDivElement {
+  const el = document.createElement("div");
+  el.className = "vr-train";
+  el.textContent = baseRoute(route);
+  const dark = DARK_TEXT.has(baseRoute(route));
+  el.style.cssText =
+    "display:flex;align-items:center;justify-content:center;" +
+    "width:22px;height:22px;border-radius:9999px;font:700 12px system-ui,sans-serif;" +
+    `background:${color};color:${dark ? "#000" : "#fff"};border:2px solid #fff;` +
+    `box-shadow:0 0 8px ${color},0 0 2px rgba(0,0,0,.5);`;
+  return el;
+}
+
 type ArrivalsState =
   | { kind: "loading" }
   | { kind: "error" }
@@ -104,6 +152,8 @@ export default function MapView() {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<import("maplibre-gl").Map | null>(null);
   const markerRef = useRef<import("maplibre-gl").Marker | null>(null);
+  const trainMarkers = useRef<Map<string, import("maplibre-gl").Marker>>(new Map());
+  const trainRaf = useRef<number | undefined>(undefined);
   const [status, setStatus] = useState<"locating" | "located" | "fallback">(
     "locating"
   );
@@ -276,6 +326,138 @@ export default function MapView() {
     return () => {
       cancelled = true;
       clearInterval(t);
+    };
+  }, [selected]);
+
+  // ---- Live train sprites: fetch positions + animate toward the station ----
+  useEffect(() => {
+    const map = mapRef.current;
+    const maplibregl = window.maplibregl;
+    if (!map || !maplibregl || !selected) return;
+
+    let cancelled = false;
+    let trains: AnimTrain[] = [];
+    let fetchTime = 0;
+    const markers = trainMarkers.current;
+    const stationId = selected.id;
+    const EMPTY: FeatureCollection = { type: "FeatureCollection", features: [] };
+
+    function ensurePathLayer() {
+      if (map!.getSource("train-paths")) return;
+      try {
+        map!.addSource("train-paths", { type: "geojson", data: EMPTY });
+        map!.addLayer({
+          id: "train-paths",
+          type: "line",
+          source: "train-paths",
+          paint: {
+            "line-color": ["get", "color"],
+            "line-width": 3,
+            "line-opacity": 0.4,
+            "line-dasharray": [1.5, 1.5],
+          },
+        });
+      } catch {
+        /* style not ready yet — retry on the next fetch */
+      }
+    }
+
+    function updatePaths() {
+      ensurePathLayer();
+      const src = map!.getSource("train-paths") as
+        | import("maplibre-gl").GeoJSONSource
+        | undefined;
+      if (!src) return;
+      const fc: FeatureCollection = {
+        type: "FeatureCollection",
+        features: trains.map((t) => ({
+          type: "Feature",
+          properties: { color: t.color },
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [t.p0.lon, t.p0.lat],
+              ...t.path.map((p) => [p.lon, p.lat]),
+            ],
+          },
+        })),
+      };
+      src.setData(fc);
+    }
+
+    async function fetchTrains() {
+      try {
+        const res = await fetch(
+          `/api/trains?station=${encodeURIComponent(stationId)}`
+        );
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as {
+          trains?: {
+            tripId: string;
+            route: string;
+            fromStop: LL;
+            toStop: LL;
+            fraction: number;
+            path: { lat: number; lon: number; etaSeconds: number }[];
+          }[];
+        };
+        if (cancelled) return;
+        fetchTime = performance.now();
+        trains = (data.trains || []).map((t) => ({
+          tripId: t.tripId,
+          route: t.route,
+          color: routeColor(t.route),
+          p0: lerp(t.fromStop, t.toStop, t.fraction ?? 0),
+          path: t.path || [],
+        }));
+        updatePaths();
+      } catch {
+        /* transient feed/fetch error — try again on the next interval */
+      }
+    }
+
+    function frame() {
+      if (cancelled) return;
+      const elapsed = (performance.now() - fetchTime) / 1000;
+      const alive = new Set<string>();
+      for (const t of trains) {
+        alive.add(t.tripId);
+        const p = trainPosAt(t, elapsed);
+        let mk = markers.get(t.tripId);
+        if (!mk) {
+          mk = new maplibregl!.Marker({ element: trainMarkerEl(t.route, t.color) });
+          mk.setLngLat([p.lon, p.lat]).addTo(map!);
+          markers.set(t.tripId, mk);
+        } else {
+          mk.setLngLat([p.lon, p.lat]);
+        }
+      }
+      for (const [id, mk] of markers) {
+        if (!alive.has(id)) {
+          mk.remove();
+          markers.delete(id);
+        }
+      }
+      trainRaf.current = requestAnimationFrame(frame);
+    }
+
+    ensurePathLayer();
+    fetchTrains();
+    const interval = setInterval(fetchTrains, 20000);
+    trainRaf.current = requestAnimationFrame(frame);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      if (trainRaf.current) cancelAnimationFrame(trainRaf.current);
+      for (const [, mk] of markers) mk.remove();
+      markers.clear();
+      try {
+        if (map.getLayer("train-paths")) map.removeLayer("train-paths");
+        if (map.getSource("train-paths")) map.removeSource("train-paths");
+      } catch {
+        /* map may already be torn down */
+      }
     };
   }, [selected]);
 
