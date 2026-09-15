@@ -61,5 +61,5 @@ export default function MapView() {
     };
   }, []);
 
-  return <div ref={containerRef} className="absolute inset-0" />;
+  return <div ref={containerRef} className="h-screen w-screen" />;
 }
