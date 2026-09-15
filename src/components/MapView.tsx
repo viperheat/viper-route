@@ -124,6 +124,10 @@ function posAtAbs(wp: Waypoint[], tMs: number): LL {
   return { lat: last.lat, lon: last.lon };
 }
 
+// Tailwind's `md` breakpoint: side-panel layout on tablets/desktops.
+const isDesktop = () =>
+  typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches;
+
 function trainMarkerEl(route: string, color: string): HTMLDivElement {
   const el = document.createElement("div");
   el.className = "vr-train";
@@ -176,6 +180,7 @@ export default function MapView() {
     null
   );
   const [arrivals, setArrivals] = useState<ArrivalsState>({ kind: "loading" });
+  const [nearestId, setNearestId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(true);
   const [showSnake, setShowSnake] = useState(false);
 
@@ -253,7 +258,15 @@ export default function MapView() {
           if (cancelled) return;
           const lon = pos.coords.longitude;
           const lat = pos.coords.latitude;
-          map.flyTo({ center: [lon, lat], zoom: 14, essential: true });
+          // On phones the arrivals sheet covers the bottom of the map, so
+          // shift the vantage point up to keep "you" in the visible part.
+          const bottom = isDesktop() ? 0 : Math.round(window.innerHeight * 0.4);
+          map.flyTo({
+            center: [lon, lat],
+            zoom: 14,
+            essential: true,
+            padding: { top: 0, bottom, left: 0, right: 0 },
+          });
 
           const el = document.createElement("div");
           el.className = "vr-user-dot";
@@ -265,6 +278,7 @@ export default function MapView() {
 
           // Auto-open the nearest station (unless the user already picked one).
           const near = nearestStation(lon, lat);
+          setNearestId(near.id);
           setSelected((prev) => prev ?? { id: near.id, name: near.name });
           setExpanded(true);
         },
@@ -585,111 +599,215 @@ export default function MapView() {
     else setExpanded(cur < off / 2);
   }
 
-  const north = arrivals.kind === "ok" ? arrivals.data.arrivals.filter((a) => a.direction === "N") : [];
-  const south = arrivals.kind === "ok" ? arrivals.data.arrivals.filter((a) => a.direction === "S") : [];
   const soonest = arrivals.kind === "ok" ? arrivals.data.arrivals[0] : null;
+  const subtitle =
+    selected && nearestId === selected.id ? "Nearest station · live" : "Live arrivals";
+  const statusText =
+    status === "locating"
+      ? "Finding you…"
+      : status === "located"
+        ? "You are here"
+        : "Showing Midtown — turn on location to center on you";
 
   return (
-    <>
-      <div ref={containerRef} className="h-screen w-screen" />
-
-      {/* Live trains on/off */}
-      <button
-        onClick={toggleTrains}
-        data-vr-trains-toggle
-        aria-pressed={trainsOn}
-        className={`absolute left-4 top-[68px] z-10 flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold shadow-lg backdrop-blur ${
-          trainsOn
-            ? "bg-neutral-950/85 text-emerald-300"
-            : "bg-neutral-950/70 text-neutral-400"
-        }`}
+    <div className="relative h-screen w-screen overflow-hidden md:flex">
+      {/* Desktop / tablet: static side panel (the phone sheet, docked) */}
+      <aside
+        data-vr-panel
+        className="hidden text-neutral-100 md:flex md:h-full md:w-[380px] md:shrink-0 md:flex-col md:border-r md:border-neutral-800 md:bg-neutral-900"
       >
-        <span
-          className={`h-2 w-2 rounded-full ${
-            trainsOn ? "bg-emerald-400 shadow-[0_0_6px_#34d399]" : "bg-neutral-600"
-          }`}
-        />
-        Live trains {trainsOn ? "on" : "off"}
-      </button>
-
-      {!selected && (
-        <div
-          data-vr-status
-          className="pointer-events-none absolute bottom-6 left-1/2 z-10 -translate-x-1/2 rounded-full bg-neutral-950/85 px-4 py-2 text-center text-sm text-neutral-100 shadow-lg backdrop-blur"
-        >
-          {status === "locating" && "Finding you…"}
-          {status === "located" && "You are here"}
-          {status === "fallback" && "Showing Midtown — turn on location to center on you"}
+        <div className="flex items-center justify-between gap-3 border-b border-neutral-800 px-4 py-3">
+          <Brand />
+          <TrainsToggle on={trainsOn} onToggle={toggleTrains} where="panel" />
         </div>
-      )}
+        {selected ? (
+          <>
+            <div className="px-4 pb-3 pt-4">
+              <StationHeader name={selected.name} subtitle={subtitle} soonest={soonest} />
+            </div>
+            <div className="flex-1 overflow-y-auto px-4 pb-4">
+              <StationBody
+                arrivals={arrivals}
+                onSnake={() => setShowSnake(true)}
+                footer="Live from the MTA · refreshes every 30s · click any station on the map"
+              />
+            </div>
+          </>
+        ) : (
+          <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-neutral-400">
+            {statusText}
+          </div>
+        )}
+      </aside>
 
-      {selected && (
-        <div
-          ref={sheetRef}
-          data-vr-sheet
-          data-vr-sheet-state={expanded ? "expanded" : "peek"}
-          className="absolute inset-x-0 bottom-0 z-20 flex h-[58vh] flex-col rounded-t-2xl bg-neutral-900 text-neutral-100 shadow-2xl"
-          style={{ willChange: "transform" }}
-        >
-          {/* Header (stays visible when peeked) + drag handle */}
+      {/* Map + phone overlays */}
+      <div className="relative h-full w-full min-w-0 md:flex-1">
+        <div ref={containerRef} className="h-full w-full" />
+
+        <div className="absolute left-4 top-4 z-10 md:hidden">
+          <Brand floating />
+        </div>
+        <div className="absolute left-4 top-[68px] z-10 md:hidden">
+          <TrainsToggle on={trainsOn} onToggle={toggleTrains} where="float" />
+        </div>
+
+        {!selected && (
           <div
-            ref={headerRef}
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={onPointerUp}
-            className="shrink-0 cursor-grab touch-none select-none px-4 pb-3 pt-2 active:cursor-grabbing"
+            data-vr-status
+            className="pointer-events-none absolute bottom-6 left-1/2 z-10 -translate-x-1/2 rounded-full bg-neutral-950/85 px-4 py-2 text-center text-sm text-neutral-100 shadow-lg backdrop-blur md:hidden"
           >
-            <div className="mx-auto mb-2 h-1.5 w-10 rounded-full bg-neutral-700" />
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <h2 className="truncate text-lg font-bold leading-tight">{selected.name}</h2>
-                <p className="text-xs text-neutral-400">Nearest station · live</p>
-              </div>
-              {soonest && (
-                <div className="flex shrink-0 items-center gap-2">
-                  <Bullet route={soonest.route} size={24} />
-                  <span className="text-sm text-neutral-200">
-                    {soonest.minutes <= 0 ? "Now" : `${soonest.minutes} min`}
-                  </span>
-                </div>
-              )}
+            {statusText}
+          </div>
+        )}
+
+        {selected && (
+          <div
+            ref={sheetRef}
+            data-vr-sheet
+            data-vr-sheet-state={expanded ? "expanded" : "peek"}
+            className="absolute inset-x-0 bottom-0 z-20 flex h-[58vh] flex-col rounded-t-2xl bg-neutral-900 text-neutral-100 shadow-2xl md:hidden"
+            style={{ willChange: "transform" }}
+          >
+            {/* Header (stays visible when peeked) + drag handle */}
+            <div
+              ref={headerRef}
+              onPointerDown={onPointerDown}
+              onPointerMove={onPointerMove}
+              onPointerUp={onPointerUp}
+              className="shrink-0 cursor-grab touch-none select-none px-4 pb-3 pt-2 active:cursor-grabbing"
+            >
+              <div className="mx-auto mb-2 h-1.5 w-10 rounded-full bg-neutral-700" />
+              <StationHeader name={selected.name} subtitle={subtitle} soonest={soonest} />
+            </div>
+
+            {/* Body (hidden below the fold when peeked) */}
+            <div className="flex-1 overflow-y-auto px-4 pb-4">
+              <StationBody
+                arrivals={arrivals}
+                onSnake={() => setShowSnake(true)}
+                footer="Live from the MTA · refreshes every 30s · drag down for the map"
+              />
             </div>
           </div>
+        )}
+      </div>
 
-          {/* Body (hidden below the fold when peeked) */}
-          <div className="flex-1 overflow-y-auto px-4 pb-4">
-            {arrivals.kind === "loading" && (
-              <p className="py-6 text-center text-sm text-neutral-400">Loading live arrivals…</p>
-            )}
-            {arrivals.kind === "error" && (
-              <p className="py-6 text-center text-sm text-neutral-400">
-                Couldn’t load arrivals right now. It’ll retry automatically.
-              </p>
-            )}
-            {arrivals.kind === "ok" && arrivals.data.arrivals.length === 0 && (
-              <p className="py-6 text-center text-sm text-neutral-400">
-                No upcoming trains reported right now.
-              </p>
-            )}
-            {arrivals.kind === "ok" && arrivals.data.arrivals.length > 0 && (
-              <div className="grid grid-cols-2 gap-4">
-                <ArrivalColumn title="↑ Northbound" arrivals={north} />
-                <ArrivalColumn title="↓ Southbound" arrivals={south} />
-              </div>
-            )}
-            <button
-              onClick={() => setShowSnake(true)}
-              className="mt-4 w-full rounded-lg bg-neutral-800 py-2 text-sm font-semibold text-emerald-400 hover:bg-neutral-700"
-            >
-              🐍 Play Subway Snake while you wait
-            </button>
-            <p className="mt-3 border-t border-neutral-800 pt-2 text-center text-[11px] text-neutral-500">
-              Live from the MTA · refreshes every 30s · drag down for the map
-            </p>
-          </div>
+      {showSnake && <SnakeGame onClose={() => setShowSnake(false)} />}
+    </div>
+  );
+}
+
+function Brand({ floating = false }: { floating?: boolean }) {
+  return (
+    <div
+      className={`flex items-center gap-2 text-neutral-100 ${
+        floating ? "rounded-full bg-neutral-950/80 px-3 py-2 shadow-lg backdrop-blur" : ""
+      }`}
+    >
+      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500 text-xs font-black text-black">
+        VR
+      </span>
+      <span className="text-sm font-bold">Viper Route</span>
+    </div>
+  );
+}
+
+function TrainsToggle({
+  on,
+  onToggle,
+  where,
+}: {
+  on: boolean;
+  onToggle: () => void;
+  where: "panel" | "float";
+}) {
+  return (
+    <button
+      onClick={onToggle}
+      data-vr-trains-toggle={where}
+      aria-pressed={on}
+      className={`flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold shadow-lg backdrop-blur ${
+        on ? "bg-neutral-950/85 text-emerald-300" : "bg-neutral-950/70 text-neutral-400"
+      }`}
+    >
+      <span
+        className={`h-2 w-2 rounded-full ${
+          on ? "bg-emerald-400 shadow-[0_0_6px_#34d399]" : "bg-neutral-600"
+        }`}
+      />
+      Live trains {on ? "on" : "off"}
+    </button>
+  );
+}
+
+function StationHeader({
+  name,
+  subtitle,
+  soonest,
+}: {
+  name: string;
+  subtitle: string;
+  soonest: Arrival | null;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <div className="min-w-0">
+        <h2 className="truncate text-lg font-bold leading-tight">{name}</h2>
+        <p className="text-xs text-neutral-400">{subtitle}</p>
+      </div>
+      {soonest && (
+        <div className="flex shrink-0 items-center gap-2">
+          <Bullet route={soonest.route} size={24} />
+          <span className="text-sm text-neutral-200">
+            {soonest.minutes <= 0 ? "Now" : `${soonest.minutes} min`}
+          </span>
         </div>
       )}
-      {showSnake && <SnakeGame onClose={() => setShowSnake(false)} />}
+    </div>
+  );
+}
+
+function StationBody({
+  arrivals,
+  onSnake,
+  footer,
+}: {
+  arrivals: ArrivalsState;
+  onSnake: () => void;
+  footer: string;
+}) {
+  const north = arrivals.kind === "ok" ? arrivals.data.arrivals.filter((a) => a.direction === "N") : [];
+  const south = arrivals.kind === "ok" ? arrivals.data.arrivals.filter((a) => a.direction === "S") : [];
+  return (
+    <>
+      {arrivals.kind === "loading" && (
+        <p className="py-6 text-center text-sm text-neutral-400">Loading live arrivals…</p>
+      )}
+      {arrivals.kind === "error" && (
+        <p className="py-6 text-center text-sm text-neutral-400">
+          Couldn’t load arrivals right now. It’ll retry automatically.
+        </p>
+      )}
+      {arrivals.kind === "ok" && arrivals.data.arrivals.length === 0 && (
+        <p className="py-6 text-center text-sm text-neutral-400">
+          No upcoming trains reported right now.
+        </p>
+      )}
+      {arrivals.kind === "ok" && arrivals.data.arrivals.length > 0 && (
+        <div className="grid grid-cols-2 gap-4">
+          <ArrivalColumn title="↑ Northbound" arrivals={north} />
+          <ArrivalColumn title="↓ Southbound" arrivals={south} />
+        </div>
+      )}
+      <button
+        onClick={onSnake}
+        className="mt-4 w-full rounded-lg bg-neutral-800 py-2 text-sm font-semibold text-emerald-400 hover:bg-neutral-700"
+      >
+        🐍 Play Subway Snake while you wait
+      </button>
+      <p className="mt-3 border-t border-neutral-800 pt-2 text-center text-[11px] text-neutral-500">
+        {footer}
+      </p>
     </>
   );
 }

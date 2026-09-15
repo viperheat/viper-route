@@ -58,6 +58,8 @@ Ordered roughly by value-for-effort. We'll re-prioritize as you use it.
 
 **Later ideas parking lot:** saved favorite stops, service-alert banners (delays/reroutes), dark mode, "notify me when my train is 5 min away," step-free/accessibility filter, a shareable "my commute" link.
 
+**Phase 6 — Accounts & social.** Sign in with Apple or Google (Supabase Auth), add friends, save favorite stations, and maybe send short messages ("on the 2, be there in 8"). Needs the database layer, so it comes after the free-tier-only features above.
+
 ---
 
 ## 5. The stack (and plain-language why)
@@ -140,6 +142,21 @@ Build the server function that fetches + translates the subway realtime feed; ta
 Loading states, error handling, mobile layout, last-updated stamp, basic branding. *You see: something you'd actually text to a friend.*
 
 **Then:** Phase 2 buses → Phase 3 custom graphics → Phase 4 directions → Phase 5 snake. Each gets its own mini-spec when we reach it.
+
+### v2 — "is this the best we can do?" (shipped so far: M6–M10)
+
+Built after v1 went live. Order chosen for value-for-effort:
+
+1. **M6/M6b — Dark map + Viper palette.** OpenFreeMap dark style recolored at runtime.
+2. **M7 — Subway Snake.** Classic snake in a full-screen overlay, food = MTA line bullets.
+3. **M8/M9 — Live train sprites.** Ghost trains interpolated along the real path from the realtime feed, with real-time physics, per-train memory across refreshes (glide instead of teleport), fade in/out, and a "Live trains on/off" toggle remembered per device.
+4. **M10 — Responsive layout.** Phones keep the draggable bottom sheet; tablets/desktops (≥768px) get a docked left panel with the brand, toggle and arrivals, map fills the rest.
+5. **Next: Snake on the streets.** A small snake sprite in the corner of the map launches the game; the snake runs on an invisible track over Manhattan's real street grid (14th–24th St × 9th–Park Ave).
+6. **Avatar editor.** A circular pixel-sprite editor that replaces the "you are here" dot (saved on-device).
+7. **Neon color pass.** Cooler palette + glow across UI and map.
+8. **Race the Train.** Your walking/biking pace vs. the live train to the next stop.
+9. **Colored subway lines on the map.** Static GTFS shapes → line layer (data task in Claude Code).
+10. **Buses.** Needs a free MTA Bus Time key (owner registers).
 
 ---
 
