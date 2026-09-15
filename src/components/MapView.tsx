@@ -55,6 +55,15 @@ const DARK_TEXT = new Set(["N", "Q", "R", "W"]);
 const baseRoute = (r: string) => r.replace(/X$/, "");
 const routeColor = (r: string) => ROUTE_COLORS[baseRoute(r)] ?? "#4b5563";
 
+// Viper Route dark palette — applied over OpenFreeMap's dark base at runtime.
+// Tweak these to restyle the map.
+const PALETTE = {
+  land: "#0c0f14", // blue-slate base
+  water: "#0b1f2b", // deep teal
+  green: "#10241b", // dark emerald parks
+  building: "#171b22", // subtle lift from land
+};
+
 function Bullet({ route, size = 28 }: { route: string; size?: number }) {
   const label = baseRoute(route);
   const color = DARK_TEXT.has(label) ? "#000" : "#fff";
@@ -106,6 +115,33 @@ export default function MapView() {
   // ---- Map setup (once) ----
   useEffect(() => {
     let cancelled = false;
+
+    // Recolor the base map layers to the Viper Route palette.
+    function applyPalette(map: import("maplibre-gl").Map) {
+      const style = map.getStyle();
+      if (!style?.layers) return;
+      for (const layer of style.layers) {
+        const id = layer.id;
+        const lid = id.toLowerCase();
+        try {
+          if (layer.type === "background") {
+            map.setPaintProperty(id, "background-color", PALETTE.land);
+          } else if (layer.type === "fill") {
+            if (lid.includes("water")) {
+              map.setPaintProperty(id, "fill-color", PALETTE.water);
+            } else if (/park|wood|grass|forest|golf|pitch|garden|cemetery|landcover|farmland|scrub/.test(lid)) {
+              map.setPaintProperty(id, "fill-color", PALETTE.green);
+            } else if (lid.includes("building")) {
+              map.setPaintProperty(id, "fill-color", PALETTE.building);
+            }
+          } else if (layer.type === "line" && lid.includes("water")) {
+            map.setPaintProperty(id, "line-color", PALETTE.water);
+          }
+        } catch {
+          // ignore layers that don't accept the property
+        }
+      }
+    }
 
     function addStations(map: import("maplibre-gl").Map) {
       if (map.getSource("stations")) return;
@@ -198,6 +234,7 @@ export default function MapView() {
         "top-right"
       );
       map.on("load", () => {
+        applyPalette(map);
         addStations(map);
         locateUser(maplibregl, map);
       });
