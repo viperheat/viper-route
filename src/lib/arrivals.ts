@@ -2,13 +2,13 @@ import stationsData from "@/data/stations.json";
 import stationStopIdsData from "@/data/station-stop-ids.json";
 import { getAllStopTimeEvents } from "@/lib/gtfsFeeds";
 
-type Station = { id: string; name: string; lat: number; lon: number };
+export type Station = { id: string; name: string; lat: number; lon: number };
 
-const STATIONS = stationsData as Station[];
+export const STATIONS = stationsData as Station[];
 // Complexes where more than one GTFS parent stop_id serves the same named
 // station (e.g. Times Sq-42 St spans 127, R16, 725, 902). See
 // scripts/build-station-stop-ids.mjs for how this is derived/verified.
-const STATION_STOP_IDS = stationStopIdsData as Record<string, string[]>;
+export const STATION_STOP_IDS = stationStopIdsData as Record<string, string[]>;
 
 const MAX_ARRIVALS = 8;
 
@@ -32,11 +32,12 @@ export class UnknownStationError extends Error {
   }
 }
 
-function findStation(stationId: string): Station | undefined {
+export function findStation(stationId: string): Station | undefined {
   return STATIONS.find((s) => s.id === stationId);
 }
 
-function parentStopIdsFor(stationId: string): string[] {
+/** All GTFS parent stop_ids belonging to a station's complex (see station-stop-ids.json). */
+export function parentStopIdsFor(stationId: string): string[] {
   return STATION_STOP_IDS[stationId] ?? [stationId];
 }
 

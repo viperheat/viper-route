@@ -1,4 +1,5 @@
 import pkg from "gtfs-realtime-bindings";
+import type Long from "long";
 
 const { transit_realtime } = pkg;
 
@@ -28,43 +29,93 @@ export interface StopTimeEvent {
   time: number;
 }
 
+/** One entry of a trip's TripUpdate.stop_time_update, in feed order (unfiltered). */
+export interface TripStopTimeUpdate {
+  stopId: string;
+  /** Unix seconds; arrival, falling back to departure. */
+  time: number;
+}
+
+export interface TripData {
+  tripId: string;
+  routeId: string;
+  /** Feed order: for a STOPPED_AT vehicle, index 0 is the stop it's AT (time in the past). */
+  stopTimeUpdates: TripStopTimeUpdate[];
+}
+
+/** Mirrors transit_realtime.VehiclePosition.VehicleStopStatus. */
+export enum VehicleStopStatus {
+  INCOMING_AT = 0,
+  STOPPED_AT = 1,
+  IN_TRANSIT_TO = 2,
+}
+
+export interface VehiclePositionData {
+  tripId: string;
+  routeId?: string;
+  /** The stop this reading is anchored to; see VehicleStopStatus for how. */
+  stopId?: string;
+  currentStatus: VehicleStopStatus;
+  /** Unix seconds. */
+  timestamp?: number;
+}
+
+export interface DecodedFeed {
+  trips: TripData[];
+  vehicles: VehiclePositionData[];
+}
+
 interface CacheEntry {
   expiresAt: number;
-  promise: Promise<StopTimeEvent[]>;
+  promise: Promise<DecodedFeed>;
 }
 
 const feedCache = new Map<string, CacheEntry>();
 
-function decodeFeed(buffer: Uint8Array): StopTimeEvent[] {
+function toNumber(value: number | Long | null | undefined): number | undefined {
+  if (value == null) return undefined;
+  return typeof value === "number" ? value : Number(value);
+}
+
+function decodeFeed(buffer: Uint8Array): DecodedFeed {
   const feed = transit_realtime.FeedMessage.decode(buffer);
-  const events: StopTimeEvent[] = [];
+  const trips: TripData[] = [];
+  const vehicles: VehiclePositionData[] = [];
 
   for (const entity of feed.entity) {
     const tripUpdate = entity.tripUpdate;
-    if (!tripUpdate?.stopTimeUpdate) continue;
+    if (tripUpdate?.stopTimeUpdate) {
+      const routeId = tripUpdate.trip?.routeId;
+      const tripId = tripUpdate.trip?.tripId;
+      if (routeId && tripId) {
+        const stopTimeUpdates: TripStopTimeUpdate[] = [];
+        for (const stu of tripUpdate.stopTimeUpdate) {
+          if (!stu.stopId) continue;
+          const time = toNumber(stu.arrival?.time ?? stu.departure?.time);
+          if (time == null) continue;
+          stopTimeUpdates.push({ stopId: stu.stopId, time });
+        }
+        trips.push({ tripId, routeId, stopTimeUpdates });
+      }
+    }
 
-    const routeId = tripUpdate.trip?.routeId;
-    const tripId = tripUpdate.trip?.tripId;
-    if (!routeId || !tripId) continue;
-
-    for (const stu of tripUpdate.stopTimeUpdate) {
-      if (!stu.stopId) continue;
-      const time = stu.arrival?.time ?? stu.departure?.time;
-      if (time == null) continue;
-
-      events.push({
-        routeId,
-        tripId,
-        stopId: stu.stopId,
-        time: typeof time === "number" ? time : Number(time),
+    const vehicle = entity.vehicle;
+    const vTripId = vehicle?.trip?.tripId;
+    if (vehicle && vTripId) {
+      vehicles.push({
+        tripId: vTripId,
+        routeId: vehicle.trip?.routeId ?? undefined,
+        stopId: vehicle.stopId ?? undefined,
+        currentStatus: (vehicle.currentStatus ?? 0) as VehicleStopStatus,
+        timestamp: toNumber(vehicle.timestamp),
       });
     }
   }
 
-  return events;
+  return { trips, vehicles };
 }
 
-async function fetchFeed(feedPath: string): Promise<StopTimeEvent[]> {
+async function fetchFeed(feedPath: string): Promise<DecodedFeed> {
   const res = await fetch(FEED_BASE + feedPath);
   if (!res.ok) {
     throw new Error(`MTA feed ${feedPath} responded ${res.status}`);
@@ -73,7 +124,7 @@ async function fetchFeed(feedPath: string): Promise<StopTimeEvent[]> {
   return decodeFeed(buffer);
 }
 
-function getCachedFeed(feedPath: string): Promise<StopTimeEvent[]> {
+function getCachedFeed(feedPath: string): Promise<DecodedFeed> {
   const now = Date.now();
   const cached = feedCache.get(feedPath);
   if (cached && cached.expiresAt > now) {
@@ -91,18 +142,36 @@ function getCachedFeed(feedPath: string): Promise<StopTimeEvent[]> {
 }
 
 /**
+ * Fetches (or reuses cached) decoded feeds across all 8 subway feeds,
+ * combined into one set of trips and one set of vehicle positions.
+ * A single feed failing does not fail the rest.
+ */
+export async function getAllDecodedFeeds(): Promise<DecodedFeed> {
+  const results = await Promise.allSettled(FEED_PATHS.map(getCachedFeed));
+
+  const trips: TripData[] = [];
+  const vehicles: VehiclePositionData[] = [];
+  for (const result of results) {
+    if (result.status === "fulfilled") {
+      trips.push(...result.value.trips);
+      vehicles.push(...result.value.vehicles);
+    } else {
+      console.error("gtfsFeeds: feed fetch failed", result.reason);
+    }
+  }
+  return { trips, vehicles };
+}
+
+/**
  * Fetches (or reuses cached) stop-time events across all 8 subway feeds.
  * A single feed failing does not fail the rest.
  */
 export async function getAllStopTimeEvents(): Promise<StopTimeEvent[]> {
-  const results = await Promise.allSettled(FEED_PATHS.map(getCachedFeed));
-
+  const { trips } = await getAllDecodedFeeds();
   const events: StopTimeEvent[] = [];
-  for (const result of results) {
-    if (result.status === "fulfilled") {
-      events.push(...result.value);
-    } else {
-      console.error("gtfsFeeds: feed fetch failed", result.reason);
+  for (const trip of trips) {
+    for (const stu of trip.stopTimeUpdates) {
+      events.push({ routeId: trip.routeId, tripId: trip.tripId, stopId: stu.stopId, time: stu.time });
     }
   }
   return events;
