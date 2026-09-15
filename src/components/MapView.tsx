@@ -24,6 +24,7 @@ declare global {
   interface Window {
     maplibregl: typeof import("maplibre-gl");
     __vrMap?: import("maplibre-gl").Map;
+    __vrTrainsRefetch?: () => void;
   }
 }
 
@@ -97,29 +98,22 @@ function nearestStation(lon: number, lat: number): Station {
 
 // ---- Live train sprites ----
 type LL = { lat: number; lon: number };
-type AnimTrain = {
-  tripId: string;
-  route: string;
-  color: string;
-  p0: LL;
-  path: { lat: number; lon: number; etaSeconds: number }[];
-};
+// A timed waypoint; `t` is an ABSOLUTE timestamp (ms, server clock).
+type Waypoint = { lat: number; lon: number; t: number };
 
 function lerp(a: LL, b: LL, f: number): LL {
   return { lat: a.lat + (b.lat - a.lat) * f, lon: a.lon + (b.lon - a.lon) * f };
 }
 
-// Where a train is `elapsed` seconds after its fetch, along its timed waypoints.
-function trainPosAt(t: AnimTrain, elapsed: number): LL {
-  const wp = [
-    { lat: t.p0.lat, lon: t.p0.lon, t: 0 },
-    ...t.path.map((p) => ({ lat: p.lat, lon: p.lon, t: p.etaSeconds })),
-  ];
-  if (wp.length === 1 || elapsed <= 0) return { lat: wp[0].lat, lon: wp[0].lon };
+// Where a train is at absolute time `tMs`, interpolated along its waypoints.
+// Position is a pure function of real time, so refreshes never reset it.
+function posAtAbs(wp: Waypoint[], tMs: number): LL {
+  if (wp.length === 0) return { lat: 0, lon: 0 };
+  if (wp.length === 1 || tMs <= wp[0].t) return { lat: wp[0].lat, lon: wp[0].lon };
   for (let i = 0; i < wp.length - 1; i++) {
-    if (elapsed <= wp[i + 1].t) {
+    if (tMs <= wp[i + 1].t) {
       const span = wp[i + 1].t - wp[i].t || 1;
-      const f = Math.min(1, Math.max(0, (elapsed - wp[i].t) / span));
+      const f = Math.min(1, Math.max(0, (tMs - wp[i].t) / span));
       return {
         lat: wp[i].lat + (wp[i + 1].lat - wp[i].lat) * f,
         lon: wp[i].lon + (wp[i + 1].lon - wp[i].lon) * f,
@@ -139,7 +133,7 @@ function trainMarkerEl(route: string, color: string): HTMLDivElement {
     "display:flex;align-items:center;justify-content:center;" +
     "width:22px;height:22px;border-radius:9999px;font:700 12px system-ui,sans-serif;" +
     `background:${color};color:${dark ? "#000" : "#fff"};border:2px solid #fff;` +
-    `box-shadow:0 0 8px ${color},0 0 2px rgba(0,0,0,.5);`;
+    `box-shadow:0 0 8px ${color},0 0 2px rgba(0,0,0,.5);transition:none;`;
   return el;
 }
 
@@ -152,8 +146,29 @@ export default function MapView() {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<import("maplibre-gl").Map | null>(null);
   const markerRef = useRef<import("maplibre-gl").Marker | null>(null);
-  const trainMarkers = useRef<Map<string, import("maplibre-gl").Marker>>(new Map());
   const trainRaf = useRef<number | undefined>(undefined);
+  const [trainsOn, setTrainsOn] = useState(true);
+
+  // Remember the user's Live trains on/off choice (per device).
+  useEffect(() => {
+    async function load() {
+      try {
+        if (localStorage.getItem("vr.trains") === "off") setTrainsOn(false);
+      } catch {
+        /* storage unavailable — default on */
+      }
+    }
+    load();
+  }, []);
+  function toggleTrains() {
+    const next = !trainsOn;
+    try {
+      localStorage.setItem("vr.trains", next ? "on" : "off");
+    } catch {
+      /* ignore */
+    }
+    setTrainsOn(next);
+  }
   const [status, setStatus] = useState<"locating" | "located" | "fallback">(
     "locating"
   );
@@ -329,17 +344,33 @@ export default function MapView() {
     };
   }, [selected]);
 
-  // ---- Live train sprites: fetch positions + animate toward the station ----
+  // ---- Live train sprites: real-time physics with per-train memory ----
   useEffect(() => {
     const map = mapRef.current;
     const maplibregl = window.maplibregl;
-    if (!map || !maplibregl || !selected) return;
+    if (!map || !maplibregl || !selected || !trainsOn) return;
 
+    type TrainState = {
+      marker: import("maplibre-gl").Marker;
+      el: HTMLDivElement;
+      color: string;
+      wp: Waypoint[];
+      corr: LL; // correction offset from a refresh; decays smoothly to 0
+      opacity: number;
+      dying: boolean;
+      gen: number;
+    };
+    const states = new Map<string, TrainState>();
     let cancelled = false;
-    let trains: AnimTrain[] = [];
-    let fetchTime = 0;
-    const markers = trainMarkers.current;
+    let clockOffset = 0; // Date.now() - server updatedAt (clock-skew correction)
+    let gen = 0;
+    let lastFrame = performance.now();
+    let pathsDirty = false;
+    const TAU = 0.7; // s — how quickly a refresh correction glides in
+    const FADE_IN = 0.5; // s
+    const FADE_OUT = 1.2; // s
     const stationId = selected.id;
+    const serverNow = () => Date.now() - clockOffset;
     const EMPTY: FeatureCollection = { type: "FeatureCollection", features: [] };
 
     function ensurePathLayer() {
@@ -370,17 +401,16 @@ export default function MapView() {
       if (!src) return;
       const fc: FeatureCollection = {
         type: "FeatureCollection",
-        features: trains.map((t) => ({
-          type: "Feature",
-          properties: { color: t.color },
-          geometry: {
-            type: "LineString",
-            coordinates: [
-              [t.p0.lon, t.p0.lat],
-              ...t.path.map((p) => [p.lon, p.lat]),
-            ],
-          },
-        })),
+        features: [...states.values()]
+          .filter((s) => !s.dying)
+          .map((s) => ({
+            type: "Feature",
+            properties: { color: s.color },
+            geometry: {
+              type: "LineString",
+              coordinates: s.wp.map((w) => [w.lon, w.lat]),
+            },
+          })),
       };
       src.setData(fc);
     }
@@ -392,6 +422,7 @@ export default function MapView() {
         );
         if (!res.ok || cancelled) return;
         const data = (await res.json()) as {
+          updatedAt?: string;
           trains?: {
             tripId: string;
             route: string;
@@ -402,14 +433,53 @@ export default function MapView() {
           }[];
         };
         if (cancelled) return;
-        fetchTime = performance.now();
-        trains = (data.trains || []).map((t) => ({
-          tripId: t.tripId,
-          route: t.route,
-          color: routeColor(t.route),
-          p0: lerp(t.fromStop, t.toStop, t.fraction ?? 0),
-          path: t.path || [],
-        }));
+
+        // Anchor every waypoint to the server's clock, then correct for skew.
+        const serverMs = Date.parse(data.updatedAt ?? "") || Date.now();
+        clockOffset = Date.now() - serverMs;
+        gen++;
+        const now = serverNow();
+
+        for (const t of data.trains || []) {
+          const p0 = lerp(t.fromStop, t.toStop, t.fraction ?? 0);
+          const wp: Waypoint[] = [
+            { lat: p0.lat, lon: p0.lon, t: serverMs },
+            ...(t.path || []).map((p) => ({
+              lat: p.lat,
+              lon: p.lon,
+              t: serverMs + p.etaSeconds * 1000,
+            })),
+          ];
+          const target = posAtAbs(wp, now);
+          const s = states.get(t.tripId);
+          if (!s) {
+            const color = routeColor(t.route);
+            const el = trainMarkerEl(t.route, color);
+            el.style.opacity = "0";
+            const marker = new maplibregl!.Marker({ element: el })
+              .setLngLat([target.lon, target.lat])
+              .addTo(map!);
+            states.set(t.tripId, {
+              marker, el, color, wp,
+              corr: { lat: 0, lon: 0 },
+              opacity: 0, dying: false, gen,
+            });
+          } else {
+            // Keep the sprite exactly where it's drawn right now, then let it
+            // glide to the corrected estimate instead of teleporting.
+            const oldTarget = posAtAbs(s.wp, now);
+            const drawn = {
+              lat: oldTarget.lat + s.corr.lat,
+              lon: oldTarget.lon + s.corr.lon,
+            };
+            s.wp = wp;
+            s.corr = { lat: drawn.lat - target.lat, lon: drawn.lon - target.lon };
+            s.dying = false;
+            s.gen = gen;
+          }
+        }
+        // Trains no longer reported: fade them out rather than popping.
+        for (const s of states.values()) if (s.gen !== gen) s.dying = true;
         updatePaths();
       } catch {
         /* transient feed/fetch error — try again on the next interval */
@@ -418,29 +488,37 @@ export default function MapView() {
 
     function frame() {
       if (cancelled) return;
-      const elapsed = (performance.now() - fetchTime) / 1000;
-      const alive = new Set<string>();
-      for (const t of trains) {
-        alive.add(t.tripId);
-        const p = trainPosAt(t, elapsed);
-        let mk = markers.get(t.tripId);
-        if (!mk) {
-          mk = new maplibregl!.Marker({ element: trainMarkerEl(t.route, t.color) });
-          mk.setLngLat([p.lon, p.lat]).addTo(map!);
-          markers.set(t.tripId, mk);
-        } else {
-          mk.setLngLat([p.lon, p.lat]);
+      const nowP = performance.now();
+      const dt = Math.min(0.1, (nowP - lastFrame) / 1000);
+      lastFrame = nowP;
+      const now = serverNow();
+      const decay = Math.exp(-dt / TAU);
+      for (const [id, s] of states) {
+        const target = posAtAbs(s.wp, now);
+        s.corr.lat *= decay;
+        s.corr.lon *= decay;
+        // Arrived at the last waypoint a moment ago → fade out.
+        if (!s.dying && now > s.wp[s.wp.length - 1].t + 3000) s.dying = true;
+        s.opacity = Math.max(
+          0,
+          Math.min(1, s.opacity + (s.dying ? -dt / FADE_OUT : dt / FADE_IN))
+        );
+        s.el.style.opacity = String(s.opacity);
+        s.marker.setLngLat([target.lon + s.corr.lon, target.lat + s.corr.lat]);
+        if (s.dying && s.opacity <= 0) {
+          s.marker.remove();
+          states.delete(id);
+          pathsDirty = true;
         }
       }
-      for (const [id, mk] of markers) {
-        if (!alive.has(id)) {
-          mk.remove();
-          markers.delete(id);
-        }
+      if (pathsDirty) {
+        updatePaths();
+        pathsDirty = false;
       }
       trainRaf.current = requestAnimationFrame(frame);
     }
 
+    window.__vrTrainsRefetch = fetchTrains;
     ensurePathLayer();
     fetchTrains();
     const interval = setInterval(fetchTrains, 20000);
@@ -448,10 +526,11 @@ export default function MapView() {
 
     return () => {
       cancelled = true;
+      delete window.__vrTrainsRefetch;
       clearInterval(interval);
       if (trainRaf.current) cancelAnimationFrame(trainRaf.current);
-      for (const [, mk] of markers) mk.remove();
-      markers.clear();
+      for (const s of states.values()) s.marker.remove();
+      states.clear();
       try {
         if (map.getLayer("train-paths")) map.removeLayer("train-paths");
         if (map.getSource("train-paths")) map.removeSource("train-paths");
@@ -459,7 +538,7 @@ export default function MapView() {
         /* map may already be torn down */
       }
     };
-  }, [selected]);
+  }, [selected, trainsOn]);
 
   // ---- Draggable sheet: snap transform when expanded/selected changes ----
   const sheetRef = useRef<HTMLDivElement>(null);
@@ -513,6 +592,25 @@ export default function MapView() {
   return (
     <>
       <div ref={containerRef} className="h-screen w-screen" />
+
+      {/* Live trains on/off */}
+      <button
+        onClick={toggleTrains}
+        data-vr-trains-toggle
+        aria-pressed={trainsOn}
+        className={`absolute left-4 top-[68px] z-10 flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold shadow-lg backdrop-blur ${
+          trainsOn
+            ? "bg-neutral-950/85 text-emerald-300"
+            : "bg-neutral-950/70 text-neutral-400"
+        }`}
+      >
+        <span
+          className={`h-2 w-2 rounded-full ${
+            trainsOn ? "bg-emerald-400 shadow-[0_0_6px_#34d399]" : "bg-neutral-600"
+          }`}
+        />
+        Live trains {trainsOn ? "on" : "off"}
+      </button>
 
       {!selected && (
         <div
