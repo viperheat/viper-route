@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { FeatureCollection } from "geojson";
 import stationsData from "@/data/stations.json";
+import SnakeGame from "@/components/SnakeGame";
 
 const NYC_FALLBACK: [number, number] = [-73.9857, 40.7484];
 
@@ -111,6 +112,7 @@ export default function MapView() {
   );
   const [arrivals, setArrivals] = useState<ArrivalsState>({ kind: "loading" });
   const [expanded, setExpanded] = useState(true);
+  const [showSnake, setShowSnake] = useState(false);
 
   // ---- Map setup (once) ----
   useEffect(() => {
@@ -395,12 +397,19 @@ export default function MapView() {
                 <ArrivalColumn title="↓ Southbound" arrivals={south} />
               </div>
             )}
+            <button
+              onClick={() => setShowSnake(true)}
+              className="mt-4 w-full rounded-lg bg-neutral-800 py-2 text-sm font-semibold text-emerald-400 hover:bg-neutral-700"
+            >
+              🐍 Play Subway Snake while you wait
+            </button>
             <p className="mt-3 border-t border-neutral-800 pt-2 text-center text-[11px] text-neutral-500">
               Live from the MTA · refreshes every 30s · drag down for the map
             </p>
           </div>
         </div>
       )}
+      {showSnake && <SnakeGame onClose={() => setShowSnake(false)} />}
     </>
   );
 }
