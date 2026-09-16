@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { FeatureCollection } from "geojson";
 import stationsData from "@/data/stations.json";
@@ -183,6 +183,10 @@ export default function MapView() {
   const [nearestId, setNearestId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(true);
   const [showSnake, setShowSnake] = useState(false);
+  // The map instance as state, so JSX (the snake game) can use it.
+  const [mapObj, setMapObj] = useState<import("maplibre-gl").Map | null>(null);
+  // Stable identity: the game's effect depends on it, so it must not change per render.
+  const closeSnake = useCallback(() => setShowSnake(false), []);
 
   // ---- Map setup (once) ----
   useEffect(() => {
@@ -305,6 +309,7 @@ export default function MapView() {
       });
       mapRef.current = map;
       window.__vrMap = map;
+      setMapObj(map);
 
       map.addControl(new maplibregl.NavigationControl(), "top-right");
       map.addControl(
@@ -321,9 +326,15 @@ export default function MapView() {
       });
     }
 
+    // Belt and braces: keep the canvas in step with the container when a
+    // desktop window is resized across the side-panel breakpoint.
+    const onResize = () => mapRef.current?.resize();
+    window.addEventListener("resize", onResize);
+
     init();
     return () => {
       cancelled = true;
+      window.removeEventListener("resize", onResize);
       markerRef.current?.remove();
       markerRef.current = null;
       mapRef.current?.remove();
@@ -628,7 +639,6 @@ export default function MapView() {
             <div className="flex-1 overflow-y-auto px-4 pb-4">
               <StationBody
                 arrivals={arrivals}
-                onSnake={() => setShowSnake(true)}
                 footer="Live from the MTA · refreshes every 30s · click any station on the map"
               />
             </div>
@@ -644,14 +654,29 @@ export default function MapView() {
       <div className="relative h-full w-full min-w-0 md:flex-1">
         <div ref={containerRef} className="h-full w-full" />
 
-        <div className="absolute left-4 top-4 z-10 md:hidden">
+        <div className={`absolute left-4 top-4 z-10 md:hidden ${showSnake ? "hidden" : ""}`}>
           <Brand floating />
         </div>
-        <div className="absolute left-4 top-[68px] z-10 md:hidden">
+        <div className={`absolute left-4 top-[68px] z-10 md:hidden ${showSnake ? "hidden" : ""}`}>
           <TrainsToggle on={trainsOn} onToggle={toggleTrains} where="float" />
         </div>
 
-        {!selected && (
+        {/* Little snake in the corner — tap to play on the streets */}
+        {!showSnake && (
+          <button
+            onClick={() => mapObj && setShowSnake(true)}
+            data-vr-snake-launch
+            aria-label="Play Subway Snake"
+            title="Play Subway Snake"
+            className={`vr-snake-launch absolute right-3 z-10 rounded-xl bg-neutral-950/80 p-1.5 shadow-lg backdrop-blur hover:bg-neutral-800 ${
+              selected ? "bottom-[calc(58vh+12px)] md:bottom-8" : "bottom-8"
+            }`}
+          >
+            <SnakeSprite />
+          </button>
+        )}
+
+        {!selected && !showSnake && (
           <div
             data-vr-status
             className="pointer-events-none absolute bottom-6 left-1/2 z-10 -translate-x-1/2 rounded-full bg-neutral-950/85 px-4 py-2 text-center text-sm text-neutral-100 shadow-lg backdrop-blur md:hidden"
@@ -660,7 +685,7 @@ export default function MapView() {
           </div>
         )}
 
-        {selected && (
+        {selected && !showSnake && (
           <div
             ref={sheetRef}
             data-vr-sheet
@@ -684,16 +709,43 @@ export default function MapView() {
             <div className="flex-1 overflow-y-auto px-4 pb-4">
               <StationBody
                 arrivals={arrivals}
-                onSnake={() => setShowSnake(true)}
                 footer="Live from the MTA · refreshes every 30s · drag down for the map"
               />
             </div>
           </div>
         )}
-      </div>
 
-      {showSnake && <SnakeGame onClose={() => setShowSnake(false)} />}
+        {showSnake && mapObj && (
+          <SnakeGame map={mapObj} onClose={closeSnake} />
+        )}
+      </div>
     </div>
+  );
+}
+
+// 12×8 pixel-art snake for the corner launcher.
+function SnakeSprite() {
+  const P = [
+    "....GGGG....",
+    "...GGGGGG...",
+    "..GGwGGGGG..",
+    "..GGGGGGGGG.",
+    "R.GGG..GGGG.",
+    "RRGG....GGGG",
+    ".GGG....GGGG",
+    "GGG......GGG",
+  ];
+  const fill: Record<string, string> = { G: "#34d399", w: "#052e16", R: "#f43f5e" };
+  const rects: React.ReactNode[] = [];
+  P.forEach((row, y) =>
+    [...row].forEach((ch, x) => {
+      if (fill[ch]) rects.push(<rect key={`${x}-${y}`} x={x} y={y} width={1} height={1} fill={fill[ch]} />);
+    })
+  );
+  return (
+    <svg viewBox="0 0 12 8" width="36" height="24" shapeRendering="crispEdges" aria-hidden>
+      {rects}
+    </svg>
   );
 }
 
@@ -767,15 +819,7 @@ function StationHeader({
   );
 }
 
-function StationBody({
-  arrivals,
-  onSnake,
-  footer,
-}: {
-  arrivals: ArrivalsState;
-  onSnake: () => void;
-  footer: string;
-}) {
+function StationBody({ arrivals, footer }: { arrivals: ArrivalsState; footer: string }) {
   const north = arrivals.kind === "ok" ? arrivals.data.arrivals.filter((a) => a.direction === "N") : [];
   const south = arrivals.kind === "ok" ? arrivals.data.arrivals.filter((a) => a.direction === "S") : [];
   return (
@@ -799,13 +843,7 @@ function StationBody({
           <ArrivalColumn title="↓ Southbound" arrivals={south} />
         </div>
       )}
-      <button
-        onClick={onSnake}
-        className="mt-4 w-full rounded-lg bg-neutral-800 py-2 text-sm font-semibold text-emerald-400 hover:bg-neutral-700"
-      >
-        🐍 Play Subway Snake while you wait
-      </button>
-      <p className="mt-3 border-t border-neutral-800 pt-2 text-center text-[11px] text-neutral-500">
+      <p className="mt-4 border-t border-neutral-800 pt-2 text-center text-[11px] text-neutral-500">
         {footer}
       </p>
     </>

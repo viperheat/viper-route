@@ -143,7 +143,7 @@ Loading states, error handling, mobile layout, last-updated stamp, basic brandin
 
 **Then:** Phase 2 buses → Phase 3 custom graphics → Phase 4 directions → Phase 5 snake. Each gets its own mini-spec when we reach it.
 
-### v2 — "is this the best we can do?" (shipped so far: M6–M10)
+### v2 — "is this the best we can do?" (shipped so far: M6–M11)
 
 Built after v1 went live. Order chosen for value-for-effort:
 
@@ -151,7 +151,7 @@ Built after v1 went live. Order chosen for value-for-effort:
 2. **M7 — Subway Snake.** Classic snake in a full-screen overlay, food = MTA line bullets.
 3. **M8/M9 — Live train sprites.** Ghost trains interpolated along the real path from the realtime feed, with real-time physics, per-train memory across refreshes (glide instead of teleport), fade in/out, and a "Live trains on/off" toggle remembered per device.
 4. **M10 — Responsive layout.** Phones keep the draggable bottom sheet; tablets/desktops (≥768px) get a docked left panel with the brand, toggle and arrivals, map fills the rest.
-5. **Next: Snake on the streets.** A small snake sprite in the corner of the map launches the game; the snake runs on an invisible track over Manhattan's real street grid (14th–24th St × 9th–Park Ave).
+5. **M11 — Snake on the streets.** A small pixel snake in the corner of the map launches the game. The snake runs on Manhattan's real street grid (14th–24th St × 9th Ave–Park Ave S), drawn over the live map; intersections come from OpenStreetMap (`src/data/snake-grid.json`), the map rotates to the grid's 29° bearing (119° in portrait so the board fills a phone), and you can only turn north/south at an avenue.
 6. **Avatar editor.** A circular pixel-sprite editor that replaces the "you are here" dot (saved on-device).
 7. **Neon color pass.** Cooler palette + glow across UI and map.
 8. **Race the Train.** Your walking/biking pace vs. the live train to the next stop.
