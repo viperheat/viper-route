@@ -30,6 +30,7 @@ declare global {
     maplibregl: typeof import("maplibre-gl");
     __vrMap?: import("maplibre-gl").Map;
     __vrTrainsRefetch?: () => void;
+    __vrTrainsState?: () => unknown[];
   }
 }
 
@@ -122,17 +123,46 @@ function paintUserMarker(el: HTMLDivElement, avatar: Avatar | null) {
 const isDesktop = () =>
   typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches;
 
+// A train sprite: the line bullet plus a small chevron that points the way
+// it's moving (rotated each frame; fades when the train is holding).
 function trainMarkerEl(route: string, color: string): HTMLDivElement {
   const el = document.createElement("div");
   el.className = "vr-train";
-  el.textContent = baseRoute(route);
+  el.style.cssText = "position:relative;width:22px;height:22px;transition:none;";
   const dark = DARK_TEXT.has(baseRoute(route));
-  el.style.cssText =
-    "display:flex;align-items:center;justify-content:center;" +
-    "width:22px;height:22px;border-radius:9999px;font:700 12px system-ui,sans-serif;" +
+  const bullet = document.createElement("div");
+  bullet.className = "vr-train-bullet";
+  bullet.textContent = baseRoute(route);
+  bullet.style.cssText =
+    "position:absolute;inset:0;display:flex;align-items:center;justify-content:center;" +
+    "border-radius:9999px;font:700 12px system-ui,sans-serif;" +
     `background:${color};color:${dark ? "#000" : "#fff"};border:2px solid #fff;` +
-    `box-shadow:0 0 8px ${color},0 0 2px rgba(0,0,0,.5);transition:none;`;
+    `box-shadow:0 0 8px ${color},0 0 2px rgba(0,0,0,.5);`;
+  const arm = document.createElement("div");
+  arm.className = "vr-train-arm";
+  arm.style.cssText = "position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .4s;";
+  const tip = document.createElement("div");
+  tip.className = "vr-train-tip";
+  tip.style.cssText =
+    "position:absolute;left:50%;top:50%;width:0;height:0;margin-left:-4px;margin-top:-19px;" +
+    `border-left:4px solid transparent;border-right:4px solid transparent;border-bottom:7px solid ${color};` +
+    `filter:drop-shadow(0 0 3px ${color});`;
+  arm.appendChild(tip);
+  el.appendChild(arm);
+  el.appendChild(bullet);
   return el;
+}
+
+// Point a sprite's chevron along `headingDeg` (compass), given the map's bearing.
+function aimTrain(el: HTMLDivElement, headingDeg: number | null, mapBearing: number, moving: boolean) {
+  const arm = el.querySelector<HTMLDivElement>(".vr-train-arm");
+  if (!arm) return;
+  if (headingDeg === null || !moving) {
+    arm.style.opacity = "0";
+    return;
+  }
+  arm.style.opacity = "0.9";
+  arm.style.transform = `rotate(${headingDeg - mapBearing}deg)`;
 }
 
 type ArrivalsState =
@@ -572,6 +602,7 @@ export default function MapView() {
       const now = serverNow();
       for (const [id, s] of states) {
         const p = s.motion.step(now, dt);
+        aimTrain(s.el, s.motion.heading(), map!.getBearing(), s.motion.v > 1.5);
         // Reached the station and the ETA has passed → fade out.
         if (!s.dying && s.motion.atEnd && now > s.motion.track.last.t + 3000) s.dying = true;
         s.opacity = Math.max(
@@ -594,6 +625,13 @@ export default function MapView() {
     }
 
     window.__vrTrainsRefetch = fetchTrains;
+    // Debug/verification hook: current motion state of every sprite.
+    window.__vrTrainsState = () =>
+      [...states.entries()].map(([id, s]) => ({
+        id, s: Math.round(s.motion.s), v: +s.motion.v.toFixed(2), pos: s.motion.position,
+        target: Math.round(s.motion.track.sAtTime(serverNow())),
+        len: Math.round(s.motion.track.length), opacity: +s.opacity.toFixed(2), dying: s.dying,
+      }));
     ensurePathLayer();
     fetchTrains();
     const interval = setInterval(fetchTrains, 20000);
@@ -602,6 +640,7 @@ export default function MapView() {
     return () => {
       cancelled = true;
       delete window.__vrTrainsRefetch;
+      delete window.__vrTrainsState;
       clearInterval(interval);
       if (trainRaf.current) cancelAnimationFrame(trainRaf.current);
       for (const s of states.values()) s.marker.remove();

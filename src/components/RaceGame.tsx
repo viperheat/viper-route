@@ -162,14 +162,25 @@ export default function RaceGame({
     let motion: TrainMotion | null = null;
     let clockOffset = 0;
     const serverNow = () => Date.now() - clockOffset;
+    const color = routeColor(chosen.route);
     const trainEl = document.createElement("div");
     trainEl.className = "vr-race-train";
-    trainEl.textContent = baseRoute(chosen.route);
-    const color = routeColor(chosen.route);
-    trainEl.style.cssText =
-      "display:flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:9999px;" +
+    trainEl.style.cssText = "position:relative;width:30px;height:30px;";
+    const bullet = document.createElement("div");
+    bullet.textContent = baseRoute(chosen.route);
+    bullet.style.cssText =
+      "position:absolute;inset:0;display:flex;align-items:center;justify-content:center;border-radius:9999px;" +
       `font:800 15px system-ui,sans-serif;background:${color};color:${DARK_TEXT.has(baseRoute(chosen.route)) ? "#000" : "#fff"};` +
       `border:2px solid #fff;box-shadow:0 0 16px ${color},0 0 4px rgba(0,0,0,.6);`;
+    const arm = document.createElement("div");
+    arm.style.cssText = "position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .4s;";
+    const tip = document.createElement("div");
+    tip.style.cssText =
+      "position:absolute;left:50%;top:50%;width:0;height:0;margin-left:-5px;margin-top:-25px;" +
+      `border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:9px solid ${color};filter:drop-shadow(0 0 3px ${color});`;
+    arm.appendChild(tip);
+    trainEl.appendChild(arm);
+    trainEl.appendChild(bullet);
     const trainMarker = new maplibregl.Marker({ element: trainEl });
     let trainShown = false;
 
@@ -285,6 +296,9 @@ export default function RaceGame({
       if (motion) {
         const p = motion.step(now, dt);
         trainMarker.setLngLat([p.lon, p.lat]);
+        const h = motion.heading();
+        if (h === null || motion.v <= 1.5) arm.style.opacity = "0";
+        else { arm.style.opacity = "0.9"; arm.style.transform = `rotate(${h - map.getBearing()}deg)`; }
         trainLeft = (motion.track.last.t - now) / 1000;
         const total = motion.track.length || 1;
         trainProg = Math.min(1, motion.s / total);

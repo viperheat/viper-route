@@ -148,14 +148,30 @@ export class TrainMotion {
     const target = this.track.sAtTime(now);
     const nominal = this.track.speedAt(this.s);
     const gap = target - this.s;
+    // Timetable speed plus a proportional nudge to close the gap. Because the
+    // target itself moves at the timetable speed, this settles with ~zero gap
+    // instead of stop-and-go. Only when we're clearly ahead do we hold.
     let want: number;
-    if (gap > HOLD_TOLERANCE_M) want = Math.min(MAX_SPEED, nominal + gap / CATCH_UP_SECONDS);
-    else if (gap < -HOLD_TOLERANCE_M) want = 0;
-    else want = Math.min(nominal, Math.max(0, gap) / Math.max(dt, 0.016));
+    if (gap < -HOLD_TOLERANCE_M) want = 0;
+    else want = Math.max(0, Math.min(MAX_SPEED, nominal + gap / CATCH_UP_SECONDS));
     const k = 1 - Math.exp(-dt / SPEED_SMOOTHING);
     this.v += (want - this.v) * k;
     this.s = Math.min(this.track.length, this.s + this.v * dt);
     return this.position;
+  }
+
+  /** Compass heading of travel in degrees (0 = north, clockwise), or null if unknown. */
+  heading(): number | null {
+    const L = this.track.length;
+    if (L < 1) return null;
+    // A 20 m window around the sprite, kept inside the path.
+    const lo = Math.max(0, Math.min(this.s - 10, L - 20));
+    const a = this.track.pointAt(lo);
+    const b = this.track.pointAt(Math.min(L, lo + 20));
+    const k = Math.cos((a.lat * Math.PI) / 180);
+    const dx = (b.lon - a.lon) * k, dy = b.lat - a.lat;
+    if (Math.hypot(dx, dy) < 1e-7) return null;
+    return ((Math.atan2(dx, dy) * 180) / Math.PI + 360) % 360;
   }
 
   /** True once the sprite has reached the end of its path. */

@@ -150,7 +150,7 @@ Loading states, error handling, mobile layout, last-updated stamp, basic brandin
 
 **Then:** Phase 2 buses → Phase 3 custom graphics → Phase 4 directions → Phase 5 snake. Each gets its own mini-spec when we reach it.
 
-### v2 — "is this the best we can do?" (shipped so far: M6–M15)
+### v2 — "is this the best we can do?" (shipped so far: M6–M16)
 
 Built after v1 went live. Order chosen for value-for-effort:
 
@@ -163,16 +163,18 @@ Built after v1 went live. Order chosen for value-for-effort:
 7. **M13 — Neon night theme.** One palette in `src/lib/theme.ts` + Tailwind tokens in `globals.css`: deep blue-black land, cyan-tinted roads and rails, teal water, mint parks, tinted labels; cyan-glowing station halos; "you" is cyan, the brand stays emerald with real glow; panels get a hairline cyan edge; minutes render in a mono departure-board style; MapLibre controls restyled.
 8. **M14 — Forward-only train physics.** Root cause of the "sprite backs up" glitch: the feed's next estimate is often *behind* where we were drawing, and M9 glided to it. Now a sprite's position is metres along its path and only ever increases; a refresh changes its **speed** (behind the estimate → catch up, capped; ahead → hold), bridges from the drawn spot when the path advanced past a stop, and only fades/respawns if the new path is a different shape (>300 m off). Model in `src/lib/trainMotion.ts`; state kept only for trains heading to the open station, in memory.
 9. **M15 — Race the Train.** From the station panel, pick a train that's about to arrive and keep going; you race it on foot to its *next* stop. Your real GPS position (watchPosition, moves your avatar) vs. the train's live position (same forward-only model, polled from `/api/trains?station=<next>&trip=<id>` — the new `trip` param pins that trip past the 6-train cap; the API also now returns `nextStop`). Finish = within 40 m of the next station's point before the train arrives (sprite at the end, or feed ETA clearly past). Results on-device (`vr.races`), win count in the HUD. Needs location on a phone; desktop just says so.
-10. **Colored subway lines on the map.** Static GTFS shapes → line layer (data task in Claude Code).
-11. **Buses.** Needs a free MTA Bus Time key (owner registers).
+10. **M16 — Direction chevrons.** A small glowing chevron on every train sprite (and the race sprite) pointing along its path; fades when the train is holding.
+11. **Colored subway lines on the map.** Static GTFS shapes → line layer (data task in Claude Code).
+12. **Buses.** Needs a free MTA Bus Time key (owner registers).
 
 ---
 
-## 9. Open decisions (we'll settle these as we hit them)
+## 9. Decisions log (was "open decisions")
 
-- App name + custom domain (or stick with the free Vercel URL for now).
-- Subway-line coverage for v1: all lines, or start with a couple to keep it simple? (Recommendation: all — it's the same amount of work.)
-- Marker style direction for Phase 3 (authentic MTA-style bullets vs. our own look).
+- **Line coverage:** all lines, from v1 — the app reads all eight MTA subway feeds.
+- **Marker style:** authentic MTA line bullets (the colored circles) for arrivals and train sprites; stations are our own cyan rings; "you" is your pixel avatar.
+- **Direction:** train sprites carry a small chevron pointing the way they're moving (M16).
+- **Still open:** app name is "Viper Route"; custom domain vs. the free Vercel URL — undecided, no rush.
 
 ---
 
