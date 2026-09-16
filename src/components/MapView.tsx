@@ -6,6 +6,7 @@ import type { FeatureCollection } from "geojson";
 import stationsData from "@/data/stations.json";
 import SnakeGame from "@/components/SnakeGame";
 import AvatarEditor from "@/components/AvatarEditor";
+import RaceGame from "@/components/RaceGame";
 import { avatarSVG, loadAvatar, saveAvatar, type Avatar } from "@/lib/avatar";
 import { MAP_PALETTE, UI } from "@/lib/theme";
 import { Track, TrainMotion, type LL, type Waypoint } from "@/lib/trainMotion";
@@ -78,6 +79,12 @@ function Bullet({ route, size = 28 }: { route: string; size?: number }) {
       {label}
     </span>
   );
+}
+
+const STATION_BY_ID = new Map(STATIONS.map((s) => [s.id, s]));
+function stationLoc(id: string): { lat: number; lon: number } {
+  const s = STATION_BY_ID.get(id);
+  return s ? { lat: s.lat, lon: s.lon } : { lat: NYC_FALLBACK[1], lon: NYC_FALLBACK[0] };
 }
 
 // Nearest station to a [lon, lat] point (longitude scaled by latitude).
@@ -170,6 +177,10 @@ export default function MapView() {
   const [nearestId, setNearestId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(true);
   const [showSnake, setShowSnake] = useState(false);
+  const [showRace, setShowRace] = useState(false);
+  const closeRace = useCallback(() => setShowRace(false), []);
+  // The "you are here" marker as state, so the race can move it.
+  const [userMarkerObj, setUserMarkerObj] = useState<import("maplibre-gl").Marker | null>(null);
   const [avatar, setAvatar] = useState<Avatar | null>(null);
   const [showAvatar, setShowAvatar] = useState(false);
   const avatarRef = useRef<Avatar | null>(null); // read by the geolocation callback
@@ -320,6 +331,7 @@ export default function MapView() {
           markerRef.current = new maplibregl.Marker({ element: el })
             .setLngLat([lon, lat])
             .addTo(map);
+          setUserMarkerObj(markerRef.current);
           setStatus("located");
 
           // Auto-open the nearest station (unless the user already picked one).
@@ -681,6 +693,7 @@ export default function MapView() {
               <StationBody
                 arrivals={arrivals}
                 footer="Live from the MTA · refreshes every 30s · click any station on the map"
+                onRace={() => setShowRace(true)}
               />
             </div>
           </>
@@ -727,7 +740,7 @@ export default function MapView() {
           </div>
         )}
 
-        {selected && !showSnake && (
+        {selected && !showSnake && !showRace && (
           <div
             ref={sheetRef}
             data-vr-sheet
@@ -752,6 +765,7 @@ export default function MapView() {
               <StationBody
                 arrivals={arrivals}
                 footer="Live from the MTA · refreshes every 30s · drag down for the map"
+                onRace={() => setShowRace(true)}
               />
             </div>
           </div>
@@ -759,6 +773,16 @@ export default function MapView() {
 
         {showSnake && mapObj && (
           <SnakeGame map={mapObj} onClose={closeSnake} />
+        )}
+        {showRace && mapObj && selected && (
+          <RaceGame
+            map={mapObj}
+            stationId={selected.id}
+            stationName={selected.name}
+            stationLoc={stationLoc(selected.id)}
+            userMarker={userMarkerObj}
+            onClose={closeRace}
+          />
         )}
       </div>
 
@@ -897,7 +921,15 @@ function StationHeader({
   );
 }
 
-function StationBody({ arrivals, footer }: { arrivals: ArrivalsState; footer: string }) {
+function StationBody({
+  arrivals,
+  footer,
+  onRace,
+}: {
+  arrivals: ArrivalsState;
+  footer: string;
+  onRace: () => void;
+}) {
   const north = arrivals.kind === "ok" ? arrivals.data.arrivals.filter((a) => a.direction === "N") : [];
   const south = arrivals.kind === "ok" ? arrivals.data.arrivals.filter((a) => a.direction === "S") : [];
   return (
@@ -921,7 +953,14 @@ function StationBody({ arrivals, footer }: { arrivals: ArrivalsState; footer: st
           <ArrivalColumn title="↓ Southbound" arrivals={south} />
         </div>
       )}
-      <p className="mt-4 border-t border-vr-border pt-2 text-center text-[11px] text-vr-dim">
+      <button
+        onClick={onRace}
+        data-vr-race-open
+        className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-vr-panel-2 py-2 text-sm font-semibold text-emerald-300 hover:bg-vr-panel-3"
+      >
+        🏁 Race the Train <span className="text-xs font-normal text-vr-muted">· you vs. the next stop</span>
+      </button>
+      <p className="mt-3 border-t border-vr-border pt-2 text-center text-[11px] text-vr-dim">
         {footer}
       </p>
     </>

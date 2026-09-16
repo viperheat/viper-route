@@ -16,7 +16,9 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const result = await getStationTrains(stationId);
+    // ?trip=<tripId> guarantees that trip is included even past the cap (Race the Train).
+    const pinTrip = request.nextUrl.searchParams.get("trip") ?? undefined;
+    const result = await getStationTrains(stationId, pinTrip);
     return NextResponse.json(result);
   } catch (err) {
     if (err instanceof UnknownStationError) {

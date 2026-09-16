@@ -150,7 +150,7 @@ Loading states, error handling, mobile layout, last-updated stamp, basic brandin
 
 **Then:** Phase 2 buses → Phase 3 custom graphics → Phase 4 directions → Phase 5 snake. Each gets its own mini-spec when we reach it.
 
-### v2 — "is this the best we can do?" (shipped so far: M6–M14)
+### v2 — "is this the best we can do?" (shipped so far: M6–M15)
 
 Built after v1 went live. Order chosen for value-for-effort:
 
@@ -162,7 +162,7 @@ Built after v1 went live. Order chosen for value-for-effort:
 6. **M12 — Avatar editor.** Tap the "you are here" dot (or the avatar chip next to the trains toggle) to open a 16×16 pixel editor inside a circle mask: 14-color palette, eraser, three starter sprites, live preview. Saved on-device (`vr.avatar`); the map marker becomes your sprite with the same pulsing ring. "Use the plain dot" resets. Later this moves into the user profile (Phase 6).
 7. **M13 — Neon night theme.** One palette in `src/lib/theme.ts` + Tailwind tokens in `globals.css`: deep blue-black land, cyan-tinted roads and rails, teal water, mint parks, tinted labels; cyan-glowing station halos; "you" is cyan, the brand stays emerald with real glow; panels get a hairline cyan edge; minutes render in a mono departure-board style; MapLibre controls restyled.
 8. **M14 — Forward-only train physics.** Root cause of the "sprite backs up" glitch: the feed's next estimate is often *behind* where we were drawing, and M9 glided to it. Now a sprite's position is metres along its path and only ever increases; a refresh changes its **speed** (behind the estimate → catch up, capped; ahead → hold), bridges from the drawn spot when the path advanced past a stop, and only fades/respawns if the new path is a different shape (>300 m off). Model in `src/lib/trainMotion.ts`; state kept only for trains heading to the open station, in memory.
-9. **Race the Train.** Your walking/biking pace vs. the live train to the next stop.
+9. **M15 — Race the Train.** From the station panel, pick a train that's about to arrive and keep going; you race it on foot to its *next* stop. Your real GPS position (watchPosition, moves your avatar) vs. the train's live position (same forward-only model, polled from `/api/trains?station=<next>&trip=<id>` — the new `trip` param pins that trip past the 6-train cap; the API also now returns `nextStop`). Finish = within 40 m of the next station's point before the train arrives (sprite at the end, or feed ETA clearly past). Results on-device (`vr.races`), win count in the HUD. Needs location on a phone; desktop just says so.
 10. **Colored subway lines on the map.** Static GTFS shapes → line layer (data task in Claude Code).
 11. **Buses.** Needs a free MTA Bus Time key (owner registers).
 

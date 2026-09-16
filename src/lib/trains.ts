@@ -44,6 +44,8 @@ export interface TrainPosition {
   fraction: number;
   etaToStationSeconds: number;
   path: PathStop[];
+  /** The stop after the station (for Race the Train); absent if it terminates here. */
+  nextStop?: PathStop;
 }
 
 export interface StationTrains {
@@ -186,7 +188,7 @@ function buildPath(trip: TripData, fromIndex: number, throughIndex: number, nowS
   return path;
 }
 
-export async function getStationTrains(stationId: string): Promise<StationTrains> {
+export async function getStationTrains(stationId: string, pinTrip?: string): Promise<StationTrains> {
   const station = findStation(stationId);
   if (!station) {
     throw new UnknownStationError(stationId);
@@ -251,6 +253,14 @@ export async function getStationTrains(stationId: string): Promise<StationTrains
 
     const path = buildPath(trip, pathStartIndex, match.index, nowSeconds);
 
+    // One stop past the station, if the trip continues.
+    let nextStop: PathStop | undefined;
+    const after = trip.stopTimeUpdates[match.index + 1];
+    if (after) {
+      const loc = resolveStop(after.stopId);
+      if (loc) nextStop = { ...loc, etaSeconds: Math.round(after.time - nowSeconds) };
+    }
+
     trains.push({
       tripId: trip.tripId,
       route: trip.routeId,
@@ -260,14 +270,20 @@ export async function getStationTrains(stationId: string): Promise<StationTrains
       fraction,
       etaToStationSeconds: Math.round(match.time - nowSeconds),
       path,
+      nextStop,
     });
   }
 
   trains.sort((a, b) => a.etaToStationSeconds - b.etaToStationSeconds);
+  const top = trains.slice(0, MAX_TRAINS);
+  if (pinTrip && !top.some((t) => t.tripId === pinTrip)) {
+    const pinned = trains.find((t) => t.tripId === pinTrip);
+    if (pinned) top.push(pinned);
+  }
 
   return {
     station: { id: station.id, name: station.name },
     updatedAt: new Date().toISOString(),
-    trains: trains.slice(0, MAX_TRAINS),
+    trains: top,
   };
 }
