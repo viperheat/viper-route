@@ -60,6 +60,13 @@ Ordered roughly by value-for-effort. We'll re-prioritize as you use it.
 
 **Phase 6 — Accounts & social.** Sign in with Apple or Google (Supabase Auth), add friends, save favorite stations, and maybe send short messages ("on the 2, be there in 8"). Needs the database layer, so it comes after the free-tier-only features above.
 
+*Plan (agreed direction, not built yet):*
+- **Supabase** (free tier) for Auth + Postgres. Apple and Google sign-in are built in; `@supabase/ssr` for Next.js.
+- **No account required.** Everything works anonymously as today; an account adds cross-device sync and social.
+- **Tables:** `profiles` (id, handle, avatar rows — the 16×16 format from `src/lib/avatar.ts`, created_at), `favorites` (user_id, station_id), `friendships` (user_id, friend_id, status), `messages` (from, to, body, created_at) — all behind row-level security.
+- **Client:** a small account menu on the avatar chip (sign in / sign out); on sign-in, merge the on-device avatar and favorites into the profile.
+- **Setup owner does:** create the Supabase project, enable Apple + Google providers, and add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` to Vercel's environment variables. Keys are never pasted into chat.
+
 ---
 
 ## 5. The stack (and plain-language why)
@@ -143,7 +150,7 @@ Loading states, error handling, mobile layout, last-updated stamp, basic brandin
 
 **Then:** Phase 2 buses → Phase 3 custom graphics → Phase 4 directions → Phase 5 snake. Each gets its own mini-spec when we reach it.
 
-### v2 — "is this the best we can do?" (shipped so far: M6–M13)
+### v2 — "is this the best we can do?" (shipped so far: M6–M14)
 
 Built after v1 went live. Order chosen for value-for-effort:
 
@@ -154,9 +161,10 @@ Built after v1 went live. Order chosen for value-for-effort:
 5. **M11 — Snake on the streets.** A small pixel snake in the corner of the map launches the game. The snake runs on Manhattan's real street grid (14th–24th St × 9th Ave–Park Ave S), drawn over the live map; intersections come from OpenStreetMap (`src/data/snake-grid.json`), the map rotates to the grid's 29° bearing (119° in portrait so the board fills a phone), and you can only turn north/south at an avenue.
 6. **M12 — Avatar editor.** Tap the "you are here" dot (or the avatar chip next to the trains toggle) to open a 16×16 pixel editor inside a circle mask: 14-color palette, eraser, three starter sprites, live preview. Saved on-device (`vr.avatar`); the map marker becomes your sprite with the same pulsing ring. "Use the plain dot" resets. Later this moves into the user profile (Phase 6).
 7. **M13 — Neon night theme.** One palette in `src/lib/theme.ts` + Tailwind tokens in `globals.css`: deep blue-black land, cyan-tinted roads and rails, teal water, mint parks, tinted labels; cyan-glowing station halos; "you" is cyan, the brand stays emerald with real glow; panels get a hairline cyan edge; minutes render in a mono departure-board style; MapLibre controls restyled.
-8. **Race the Train.** Your walking/biking pace vs. the live train to the next stop.
-9. **Colored subway lines on the map.** Static GTFS shapes → line layer (data task in Claude Code).
-10. **Buses.** Needs a free MTA Bus Time key (owner registers).
+8. **M14 — Forward-only train physics.** Root cause of the "sprite backs up" glitch: the feed's next estimate is often *behind* where we were drawing, and M9 glided to it. Now a sprite's position is metres along its path and only ever increases; a refresh changes its **speed** (behind the estimate → catch up, capped; ahead → hold), bridges from the drawn spot when the path advanced past a stop, and only fades/respawns if the new path is a different shape (>300 m off). Model in `src/lib/trainMotion.ts`; state kept only for trains heading to the open station, in memory.
+9. **Race the Train.** Your walking/biking pace vs. the live train to the next stop.
+10. **Colored subway lines on the map.** Static GTFS shapes → line layer (data task in Claude Code).
+11. **Buses.** Needs a free MTA Bus Time key (owner registers).
 
 ---
 

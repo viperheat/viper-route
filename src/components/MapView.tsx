@@ -8,6 +8,7 @@ import SnakeGame from "@/components/SnakeGame";
 import AvatarEditor from "@/components/AvatarEditor";
 import { avatarSVG, loadAvatar, saveAvatar, type Avatar } from "@/lib/avatar";
 import { MAP_PALETTE, UI } from "@/lib/theme";
+import { Track, TrainMotion, type LL, type Waypoint } from "@/lib/trainMotion";
 
 const NYC_FALLBACK: [number, number] = [-73.9857, 40.7484];
 
@@ -94,31 +95,9 @@ function nearestStation(lon: number, lat: number): Station {
 }
 
 // ---- Live train sprites ----
-type LL = { lat: number; lon: number };
-// A timed waypoint; `t` is an ABSOLUTE timestamp (ms, server clock).
-type Waypoint = { lat: number; lon: number; t: number };
-
+// Motion model lives in src/lib/trainMotion.ts (forward-only physics).
 function lerp(a: LL, b: LL, f: number): LL {
   return { lat: a.lat + (b.lat - a.lat) * f, lon: a.lon + (b.lon - a.lon) * f };
-}
-
-// Where a train is at absolute time `tMs`, interpolated along its waypoints.
-// Position is a pure function of real time, so refreshes never reset it.
-function posAtAbs(wp: Waypoint[], tMs: number): LL {
-  if (wp.length === 0) return { lat: 0, lon: 0 };
-  if (wp.length === 1 || tMs <= wp[0].t) return { lat: wp[0].lat, lon: wp[0].lon };
-  for (let i = 0; i < wp.length - 1; i++) {
-    if (tMs <= wp[i + 1].t) {
-      const span = wp[i + 1].t - wp[i].t || 1;
-      const f = Math.min(1, Math.max(0, (tMs - wp[i].t) / span));
-      return {
-        lat: wp[i].lat + (wp[i + 1].lat - wp[i].lat) * f,
-        lon: wp[i].lon + (wp[i + 1].lon - wp[i].lon) * f,
-      };
-    }
-  }
-  const last = wp[wp.length - 1];
-  return { lat: last.lat, lon: last.lon };
 }
 
 // The "you are here" marker: plain pulsing dot, or the user's pixel avatar.
@@ -432,7 +411,7 @@ export default function MapView() {
     };
   }, [selected]);
 
-  // ---- Live train sprites: real-time physics with per-train memory ----
+  // ---- Live train sprites: forward-only physics with per-train memory ----
   useEffect(() => {
     const map = mapRef.current;
     const maplibregl = window.maplibregl;
@@ -442,19 +421,19 @@ export default function MapView() {
       marker: import("maplibre-gl").Marker;
       el: HTMLDivElement;
       color: string;
-      wp: Waypoint[];
-      corr: LL; // correction offset from a refresh; decays smoothly to 0
+      motion: TrainMotion; // forward-only position + speed along the path
       opacity: number;
       dying: boolean;
       gen: number;
     };
+    // Only the trains heading to the open station live here (a few numbers
+    // each, in memory). Switching stations drops them.
     const states = new Map<string, TrainState>();
     let cancelled = false;
     let clockOffset = 0; // Date.now() - server updatedAt (clock-skew correction)
     let gen = 0;
     let lastFrame = performance.now();
     let pathsDirty = false;
-    const TAU = 0.7; // s — how quickly a refresh correction glides in
     const FADE_IN = 0.5; // s
     const FADE_OUT = 1.2; // s
     const stationId = selected.id;
@@ -496,7 +475,7 @@ export default function MapView() {
             properties: { color: s.color },
             geometry: {
               type: "LineString",
-              coordinates: s.wp.map((w) => [w.lon, w.lat]),
+              coordinates: s.motion.track.wp.map((w) => [w.lon, w.lat]),
             },
           })),
       };
@@ -528,6 +507,18 @@ export default function MapView() {
         gen++;
         const now = serverNow();
 
+        function spawn(tripId: string, route: string, track: Track) {
+          const color = routeColor(route);
+          const el = trainMarkerEl(route, color);
+          el.style.opacity = "0";
+          const motion = new TrainMotion(track, now);
+          const p = motion.position;
+          const marker = new maplibregl!.Marker({ element: el })
+            .setLngLat([p.lon, p.lat])
+            .addTo(map!);
+          states.set(tripId, { marker, el, color, motion, opacity: 0, dying: false, gen });
+        }
+
         for (const t of data.trains || []) {
           const p0 = lerp(t.fromStop, t.toStop, t.fraction ?? 0);
           const wp: Waypoint[] = [
@@ -538,30 +529,17 @@ export default function MapView() {
               t: serverMs + p.etaSeconds * 1000,
             })),
           ];
-          const target = posAtAbs(wp, now);
+          const track = new Track(wp);
           const s = states.get(t.tripId);
           if (!s) {
-            const color = routeColor(t.route);
-            const el = trainMarkerEl(t.route, color);
-            el.style.opacity = "0";
-            const marker = new maplibregl!.Marker({ element: el })
-              .setLngLat([target.lon, target.lat])
-              .addTo(map!);
-            states.set(t.tripId, {
-              marker, el, color, wp,
-              corr: { lat: 0, lon: 0 },
-              opacity: 0, dying: false, gen,
-            });
+            spawn(t.tripId, t.route, track);
+          } else if (s.motion.update(track, now) === "reroute") {
+            // Trip shape changed under us: fade the old sprite, start a fresh one.
+            s.dying = true;
+            states.delete(t.tripId);
+            states.set(`${t.tripId}#old${gen}`, s);
+            spawn(t.tripId, t.route, track);
           } else {
-            // Keep the sprite exactly where it's drawn right now, then let it
-            // glide to the corrected estimate instead of teleporting.
-            const oldTarget = posAtAbs(s.wp, now);
-            const drawn = {
-              lat: oldTarget.lat + s.corr.lat,
-              lon: oldTarget.lon + s.corr.lon,
-            };
-            s.wp = wp;
-            s.corr = { lat: drawn.lat - target.lat, lon: drawn.lon - target.lon };
             s.dying = false;
             s.gen = gen;
           }
@@ -580,19 +558,16 @@ export default function MapView() {
       const dt = Math.min(0.1, (nowP - lastFrame) / 1000);
       lastFrame = nowP;
       const now = serverNow();
-      const decay = Math.exp(-dt / TAU);
       for (const [id, s] of states) {
-        const target = posAtAbs(s.wp, now);
-        s.corr.lat *= decay;
-        s.corr.lon *= decay;
-        // Arrived at the last waypoint a moment ago → fade out.
-        if (!s.dying && now > s.wp[s.wp.length - 1].t + 3000) s.dying = true;
+        const p = s.motion.step(now, dt);
+        // Reached the station and the ETA has passed → fade out.
+        if (!s.dying && s.motion.atEnd && now > s.motion.track.last.t + 3000) s.dying = true;
         s.opacity = Math.max(
           0,
           Math.min(1, s.opacity + (s.dying ? -dt / FADE_OUT : dt / FADE_IN))
         );
         s.el.style.opacity = String(s.opacity);
-        s.marker.setLngLat([target.lon + s.corr.lon, target.lat + s.corr.lat]);
+        s.marker.setLngLat([p.lon, p.lat]);
         if (s.dying && s.opacity <= 0) {
           s.marker.remove();
           states.delete(id);
