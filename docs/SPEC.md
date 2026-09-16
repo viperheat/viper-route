@@ -143,7 +143,7 @@ Loading states, error handling, mobile layout, last-updated stamp, basic brandin
 
 **Then:** Phase 2 buses → Phase 3 custom graphics → Phase 4 directions → Phase 5 snake. Each gets its own mini-spec when we reach it.
 
-### v2 — "is this the best we can do?" (shipped so far: M6–M11)
+### v2 — "is this the best we can do?" (shipped so far: M6–M12)
 
 Built after v1 went live. Order chosen for value-for-effort:
 
@@ -152,7 +152,7 @@ Built after v1 went live. Order chosen for value-for-effort:
 3. **M8/M9 — Live train sprites.** Ghost trains interpolated along the real path from the realtime feed, with real-time physics, per-train memory across refreshes (glide instead of teleport), fade in/out, and a "Live trains on/off" toggle remembered per device.
 4. **M10 — Responsive layout.** Phones keep the draggable bottom sheet; tablets/desktops (≥768px) get a docked left panel with the brand, toggle and arrivals, map fills the rest.
 5. **M11 — Snake on the streets.** A small pixel snake in the corner of the map launches the game. The snake runs on Manhattan's real street grid (14th–24th St × 9th Ave–Park Ave S), drawn over the live map; intersections come from OpenStreetMap (`src/data/snake-grid.json`), the map rotates to the grid's 29° bearing (119° in portrait so the board fills a phone), and you can only turn north/south at an avenue.
-6. **Avatar editor.** A circular pixel-sprite editor that replaces the "you are here" dot (saved on-device).
+6. **M12 — Avatar editor.** Tap the "you are here" dot (or the avatar chip next to the trains toggle) to open a 16×16 pixel editor inside a circle mask: 14-color palette, eraser, three starter sprites, live preview. Saved on-device (`vr.avatar`); the map marker becomes your sprite with the same pulsing ring. "Use the plain dot" resets. Later this moves into the user profile (Phase 6).
 7. **Neon color pass.** Cooler palette + glow across UI and map.
 8. **Race the Train.** Your walking/biking pace vs. the live train to the next stop.
 9. **Colored subway lines on the map.** Static GTFS shapes → line layer (data task in Claude Code).

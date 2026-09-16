@@ -5,6 +5,8 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import type { FeatureCollection } from "geojson";
 import stationsData from "@/data/stations.json";
 import SnakeGame from "@/components/SnakeGame";
+import AvatarEditor from "@/components/AvatarEditor";
+import { avatarSVG, loadAvatar, saveAvatar, type Avatar } from "@/lib/avatar";
 
 const NYC_FALLBACK: [number, number] = [-73.9857, 40.7484];
 
@@ -124,6 +126,17 @@ function posAtAbs(wp: Waypoint[], tMs: number): LL {
   return { lat: last.lat, lon: last.lon };
 }
 
+// The "you are here" marker: plain pulsing dot, or the user's pixel avatar.
+function paintUserMarker(el: HTMLDivElement, avatar: Avatar | null) {
+  if (avatar) {
+    el.className = "vr-user-avatar";
+    el.innerHTML = avatarSVG(avatar, 36);
+  } else {
+    el.className = "vr-user-dot";
+    el.innerHTML = "";
+  }
+}
+
 // Tailwind's `md` breakpoint: side-panel layout on tablets/desktops.
 const isDesktop = () =>
   typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches;
@@ -183,6 +196,28 @@ export default function MapView() {
   const [nearestId, setNearestId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(true);
   const [showSnake, setShowSnake] = useState(false);
+  const [avatar, setAvatar] = useState<Avatar | null>(null);
+  const [showAvatar, setShowAvatar] = useState(false);
+  const avatarRef = useRef<Avatar | null>(null); // read by the geolocation callback
+
+  // Load the saved avatar (per device) once.
+  useEffect(() => {
+    async function load() {
+      setAvatar(loadAvatar());
+    }
+    load();
+  }, []);
+  // Repaint the marker whenever the avatar changes.
+  useEffect(() => {
+    avatarRef.current = avatar;
+    const el = markerRef.current?.getElement() as HTMLDivElement | undefined;
+    if (el) paintUserMarker(el, avatar);
+  }, [avatar]);
+  function commitAvatar(a: Avatar | null) {
+    saveAvatar(a);
+    setAvatar(a);
+    setShowAvatar(false);
+  }
   // The map instance as state, so JSX (the snake game) can use it.
   const [mapObj, setMapObj] = useState<import("maplibre-gl").Map | null>(null);
   // Stable identity: the game's effect depends on it, so it must not change per render.
@@ -273,7 +308,12 @@ export default function MapView() {
           });
 
           const el = document.createElement("div");
-          el.className = "vr-user-dot";
+          paintUserMarker(el, avatarRef.current);
+          el.title = "That's you — tap to change your avatar";
+          el.addEventListener("click", (ev) => {
+            ev.stopPropagation();
+            setShowAvatar(true);
+          });
           markerRef.current?.remove();
           markerRef.current = new maplibregl.Marker({ element: el })
             .setLngLat([lon, lat])
@@ -629,7 +669,10 @@ export default function MapView() {
       >
         <div className="flex items-center justify-between gap-3 border-b border-neutral-800 px-4 py-3">
           <Brand />
-          <TrainsToggle on={trainsOn} onToggle={toggleTrains} where="panel" />
+          <div className="flex items-center gap-2">
+            <TrainsToggle on={trainsOn} onToggle={toggleTrains} where="panel" />
+            <AvatarChip avatar={avatar} onClick={() => setShowAvatar(true)} where="panel" />
+          </div>
         </div>
         {selected ? (
           <>
@@ -657,8 +700,9 @@ export default function MapView() {
         <div className={`absolute left-4 top-4 z-10 md:hidden ${showSnake ? "hidden" : ""}`}>
           <Brand floating />
         </div>
-        <div className={`absolute left-4 top-[68px] z-10 md:hidden ${showSnake ? "hidden" : ""}`}>
+        <div className={`absolute left-4 top-[68px] z-10 flex items-center gap-2 md:hidden ${showSnake ? "hidden" : ""}`}>
           <TrainsToggle on={trainsOn} onToggle={toggleTrains} where="float" />
+          <AvatarChip avatar={avatar} onClick={() => setShowAvatar(true)} where="float" />
         </div>
 
         {/* Little snake in the corner — tap to play on the streets */}
@@ -719,6 +763,15 @@ export default function MapView() {
           <SnakeGame map={mapObj} onClose={closeSnake} />
         )}
       </div>
+
+      {showAvatar && (
+        <AvatarEditor
+          initial={avatar}
+          onSave={commitAvatar}
+          onReset={() => commitAvatar(null)}
+          onClose={() => setShowAvatar(false)}
+        />
+      )}
     </div>
   );
 }
@@ -746,6 +799,33 @@ function SnakeSprite() {
     <svg viewBox="0 0 12 8" width="36" height="24" shapeRendering="crispEdges" aria-hidden>
       {rects}
     </svg>
+  );
+}
+
+// Small round button showing the current avatar (or the plain dot).
+function AvatarChip({
+  avatar,
+  onClick,
+  where,
+}: {
+  avatar: Avatar | null;
+  onClick: () => void;
+  where: "panel" | "float";
+}) {
+  return (
+    <button
+      onClick={onClick}
+      data-vr-avatar-chip={where}
+      title="Your avatar"
+      aria-label="Edit your avatar"
+      className="flex h-8 w-8 items-center justify-center rounded-full bg-neutral-950/85 shadow-lg backdrop-blur hover:bg-neutral-800"
+    >
+      {avatar ? (
+        <span className="flex" dangerouslySetInnerHTML={{ __html: avatarSVG(avatar, 22) }} />
+      ) : (
+        <span className="h-3.5 w-3.5 rounded-full border-2 border-white bg-emerald-500" />
+      )}
+    </button>
   );
 }
 

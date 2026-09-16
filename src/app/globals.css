@@ -49,3 +49,20 @@ body {
   75% { transform: rotate(6deg) translateY(1px); }
 }
 @media (prefers-reduced-motion: reduce) { .vr-snake-launch svg { animation: none; } }
+
+/* "You are here" as a pixel avatar: same pulsing ring as the dot */
+.vr-user-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 9999px;
+  cursor: pointer;
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.4);
+  animation: vr-pulse 2s ease-out infinite;
+}
+.vr-user-avatar svg { display: block; }
+.vr-user-dot { cursor: pointer; }
+/* Ring used behind the preview in the avatar editor */
+.vr-user-ring {
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.4);
+  animation: vr-pulse 2s ease-out infinite;
+}
