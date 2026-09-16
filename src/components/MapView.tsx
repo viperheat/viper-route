@@ -7,6 +7,8 @@ import stationsData from "@/data/stations.json";
 import SnakeGame from "@/components/SnakeGame";
 import AvatarEditor from "@/components/AvatarEditor";
 import RaceGame from "@/components/RaceGame";
+import AccountSheet from "@/components/AccountSheet";
+import { useAccount } from "@/lib/useAccount";
 import { avatarSVG, loadAvatar, saveAvatar, type Avatar } from "@/lib/avatar";
 import { MAP_PALETTE, UI } from "@/lib/theme";
 import { Track, TrainMotion, type LL, type Waypoint } from "@/lib/trainMotion";
@@ -228,10 +230,39 @@ export default function MapView() {
     const el = markerRef.current?.getElement() as HTMLDivElement | undefined;
     if (el) paintUserMarker(el, avatar);
   }, [avatar]);
+  // ---- Optional account: sync avatar + favorites across devices.
+  const account = useAccount();
+  const [showAccount, setShowAccount] = useState(false);
+  const profileAvatar = account.profile?.avatar ?? null;
+  const profileLoaded = account.profile !== null;
+  const { saveAvatarToProfile } = account;
+  useEffect(() => {
+    // On sign-in: the profile's avatar wins if it has one; otherwise push
+    // the on-device avatar up so the next device gets it.
+    async function sync() {
+      if (!profileLoaded) return;
+      if (profileAvatar) {
+        saveAvatar(profileAvatar);
+        setAvatar(profileAvatar);
+      } else if (avatarRef.current) {
+        await saveAvatarToProfile(avatarRef.current);
+      }
+    }
+    sync();
+  }, [profileLoaded, profileAvatar, saveAvatarToProfile]);
   function commitAvatar(a: Avatar | null) {
     saveAvatar(a);
     setAvatar(a);
     setShowAvatar(false);
+    account.saveAvatarToProfile(a);
+  }
+  const isFav = selected ? account.favorites.includes(selected.id) : false;
+  function pickStation(id: string) {
+    const st = STATION_BY_ID.get(id);
+    if (!st) return;
+    setSelected({ id: st.id, name: st.name });
+    setExpanded(true);
+    mapRef.current?.flyTo({ center: [st.lon, st.lat], zoom: Math.max(mapRef.current.getZoom(), 14) });
   }
   // The map instance as state, so JSX (the snake game) can use it.
   const [mapObj, setMapObj] = useState<import("maplibre-gl").Map | null>(null);
@@ -726,7 +757,7 @@ export default function MapView() {
         {selected ? (
           <>
             <div className="px-4 pb-3 pt-4">
-              <StationHeader name={selected.name} subtitle={subtitle} soonest={soonest} />
+              <StationHeader name={selected.name} subtitle={subtitle} soonest={soonest} fav={isFav} onFav={account.session ? () => account.toggleFavorite(selected.id) : undefined} />
             </div>
             <div className="flex-1 overflow-y-auto px-4 pb-4">
               <StationBody
@@ -734,6 +765,8 @@ export default function MapView() {
                 footer="Live from the MTA · refreshes every 30s · click any station on the map"
                 onRace={() => setShowRace(true)}
               />
+              <FavoritesRow ids={account.favorites} current={selected.id} onPick={pickStation} />
+              <AccountLine account={account} onOpen={() => setShowAccount(true)} />
             </div>
           </>
         ) : (
@@ -796,7 +829,7 @@ export default function MapView() {
               className="shrink-0 cursor-grab touch-none select-none px-4 pb-3 pt-2 active:cursor-grabbing"
             >
               <div className="mx-auto mb-2 h-1.5 w-10 rounded-full bg-vr-panel-3" />
-              <StationHeader name={selected.name} subtitle={subtitle} soonest={soonest} />
+              <StationHeader name={selected.name} subtitle={subtitle} soonest={soonest} fav={isFav} onFav={account.session ? () => account.toggleFavorite(selected.id) : undefined} />
             </div>
 
             {/* Body (hidden below the fold when peeked) */}
@@ -806,6 +839,8 @@ export default function MapView() {
                 footer="Live from the MTA · refreshes every 30s · drag down for the map"
                 onRace={() => setShowRace(true)}
               />
+              <FavoritesRow ids={account.favorites} current={selected.id} onPick={pickStation} />
+              <AccountLine account={account} onOpen={() => setShowAccount(true)} />
             </div>
           </div>
         )}
@@ -825,6 +860,7 @@ export default function MapView() {
         )}
       </div>
 
+      {showAccount && <AccountSheet account={account} onClose={() => setShowAccount(false)} />}
       {showAvatar && (
         <AvatarEditor
           initial={avatar}
@@ -834,6 +870,51 @@ export default function MapView() {
         />
       )}
     </div>
+  );
+}
+
+// Saved stations as tappable chips (signed-in only).
+function FavoritesRow({ ids, current, onPick }: { ids: string[]; current: string; onPick: (id: string) => void }) {
+  if (ids.length === 0) return null;
+  return (
+    <div data-vr-favorites className="mt-3">
+      <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-vr-muted">★ Favorites</h3>
+      <div className="flex flex-wrap gap-1.5">
+        {ids.map((id) => {
+          const st = STATION_BY_ID.get(id);
+          if (!st) return null;
+          const active = id === current;
+          return (
+            <button
+              key={id}
+              onClick={() => onPick(id)}
+              className={`rounded-full px-3 py-1 text-xs ${active ? "bg-emerald-500/20 text-emerald-300" : "bg-vr-panel-2 text-vr-text-2 hover:bg-vr-panel-3"}`}
+            >
+              {st.name}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// One-line account status under the station panel.
+function AccountLine({ account, onOpen }: { account: ReturnType<typeof useAccount>; onOpen: () => void }) {
+  if (!account.enabled) return null;
+  return (
+    <p className="mt-2 text-center text-[11px] text-vr-dim">
+      {account.session ? (
+        <>
+          Signed in{account.profile?.handle ? ` as @${account.profile.handle}` : ""} ·{" "}
+          <button data-vr-account-open onClick={onOpen} className="text-vr-muted hover:text-vr-text">account</button>
+        </>
+      ) : (
+        <button data-vr-account-open onClick={onOpen} className="text-emerald-300/80 hover:text-emerald-300">
+          Sign in to sync your avatar &amp; favorites
+        </button>
+      )}
+    </p>
   );
 }
 
@@ -937,16 +1018,34 @@ function StationHeader({
   name,
   subtitle,
   soonest,
+  fav,
+  onFav,
 }: {
   name: string;
   subtitle: string;
   soonest: Arrival | null;
+  fav?: boolean;
+  onFav?: () => void;
 }) {
   return (
     <div className="flex items-center justify-between gap-3">
-      <div className="min-w-0">
-        <h2 className="truncate text-lg font-bold leading-tight">{name}</h2>
-        <p className="text-xs text-vr-muted">{subtitle}</p>
+      <div className="flex min-w-0 items-center gap-2">
+        {onFav && (
+          <button
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); onFav(); }}
+            data-vr-fav
+            aria-pressed={fav}
+            aria-label={fav ? "Remove from favorites" : "Add to favorites"}
+            className={`shrink-0 text-lg leading-none ${fav ? "text-amber-300 [text-shadow:0_0_8px_rgba(252,211,77,.6)]" : "text-vr-dim hover:text-vr-muted"}`}
+          >
+            {fav ? "★" : "☆"}
+          </button>
+        )}
+        <div className="min-w-0">
+          <h2 className="truncate text-lg font-bold leading-tight">{name}</h2>
+          <p className="text-xs text-vr-muted">{subtitle}</p>
+        </div>
       </div>
       {soonest && (
         <div className="flex shrink-0 items-center gap-2">

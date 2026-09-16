@@ -60,7 +60,9 @@ Ordered roughly by value-for-effort. We'll re-prioritize as you use it.
 
 **Phase 6 — Accounts & social.** Sign in with Apple or Google (Supabase Auth), add friends, save favorite stations, and maybe send short messages ("on the 2, be there in 8"). Needs the database layer, so it comes after the free-tier-only features above.
 
-*Plan (agreed direction, not built yet):*
+*Status: M17 shipped the first slice — email magic-link sign-in, profile (handle + synced avatar), favorite stations. Google/Apple buttons appear when `NEXT_PUBLIC_AUTH_PROVIDERS=google,apple` is set after those providers are configured in Supabase. Friends and messages are next.*
+
+*Plan:*
 - **Supabase** (free tier) for Auth + Postgres. Apple and Google sign-in are built in; `@supabase/ssr` for Next.js.
 - **No account required.** Everything works anonymously as today; an account adds cross-device sync and social.
 - **Tables:** `profiles` (id, handle, avatar rows — the 16×16 format from `src/lib/avatar.ts`, created_at), `favorites` (user_id, station_id), `friendships` (user_id, friend_id, status), `messages` (from, to, body, created_at) — all behind row-level security.
@@ -150,7 +152,7 @@ Loading states, error handling, mobile layout, last-updated stamp, basic brandin
 
 **Then:** Phase 2 buses → Phase 3 custom graphics → Phase 4 directions → Phase 5 snake. Each gets its own mini-spec when we reach it.
 
-### v2 — "is this the best we can do?" (shipped so far: M6–M16)
+### v2 — "is this the best we can do?" (shipped so far: M6–M17)
 
 Built after v1 went live. Order chosen for value-for-effort:
 
@@ -165,7 +167,8 @@ Built after v1 went live. Order chosen for value-for-effort:
 9. **M15 — Race the Train.** From the station panel, pick a train that's about to arrive and keep going; you race it on foot to its *next* stop. Your real GPS position (watchPosition, moves your avatar) vs. the train's live position (same forward-only model, polled from `/api/trains?station=<next>&trip=<id>` — the new `trip` param pins that trip past the 6-train cap; the API also now returns `nextStop`). Finish = within 40 m of the next station's point before the train arrives (sprite at the end, or feed ETA clearly past). Results on-device (`vr.races`), win count in the HUD. Needs location on a phone; desktop just says so.
 10. **M16 — Direction chevrons.** A small glowing chevron on every train sprite (and the race sprite) pointing along its path; fades when the train is holding.
 11. **Colored subway lines on the map.** Static GTFS shapes → line layer (data task in Claude Code).
-12. **Buses.** Needs a free MTA Bus Time key (owner registers).
+12. **M17 — Accounts, first slice.** Supabase Auth (magic link) + `profiles`/`favorites` tables with RLS (`supabase/schema.sql`), `useAccount` hook, account card, ★ favorites with a chips row, avatar synced to the profile. App runs unchanged with no keys configured.
+13. **Buses.** Needs a free MTA Bus Time key (owner registers).
 
 ---
 
