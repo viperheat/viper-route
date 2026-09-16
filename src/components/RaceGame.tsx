@@ -165,7 +165,7 @@ export default function RaceGame({
     const color = routeColor(chosen.route);
     const trainEl = document.createElement("div");
     trainEl.className = "vr-race-train";
-    trainEl.style.cssText = "position:relative;width:30px;height:30px;";
+    trainEl.style.cssText = "width:30px;height:30px;"; // position comes from .maplibregl-marker
     const bullet = document.createElement("div");
     bullet.textContent = baseRoute(chosen.route);
     bullet.style.cssText =

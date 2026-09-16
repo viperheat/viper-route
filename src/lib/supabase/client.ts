@@ -5,7 +5,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 // Accounts are optional: with no keys configured the app runs anonymously
 // and every sign-in affordance stays hidden.
-export const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+// Accept the "REST URL"/"Data API URL" form too (…/rest/v1) — people copy
+// whichever the dashboard shows; the client needs the bare project URL.
+export const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim().replace(/\/+(rest|auth|storage)\/v1\/?$/, "").replace(/\/+$/, "");
 export const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 export const accountsEnabled = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
 

@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
   const next = url.searchParams.get("next") ?? "/";
   const redirect = NextResponse.redirect(new URL(next, url.origin));
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim().replace(/\/+(rest|auth|storage)\/v1\/?$/, "").replace(/\/+$/, "");
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!code || !supabaseUrl || !anon) return redirect;
 

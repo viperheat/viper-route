@@ -130,7 +130,8 @@ const isDesktop = () =>
 function trainMarkerEl(route: string, color: string): HTMLDivElement {
   const el = document.createElement("div");
   el.className = "vr-train";
-  el.style.cssText = "position:relative;width:22px;height:22px;transition:none;";
+  // NB: no `position` here — MapLibre's .maplibregl-marker makes it absolute.
+  el.style.cssText = "width:22px;height:22px;transition:none;";
   const dark = DARK_TEXT.has(baseRoute(route));
   const bullet = document.createElement("div");
   bullet.className = "vr-train-bullet";
