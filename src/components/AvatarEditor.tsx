@@ -100,13 +100,13 @@ export default function AvatarEditor({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-sm rounded-2xl bg-neutral-900 p-4 text-neutral-100 shadow-2xl"
+        className="w-full max-w-sm rounded-2xl bg-vr-panel p-4 text-vr-text shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
             <h2 className="text-lg font-bold leading-tight">Your avatar</h2>
-            <p className="text-xs text-neutral-400">This is you on the map. Draw inside the circle.</p>
+            <p className="text-xs text-vr-muted">This is you on the map. Draw inside the circle.</p>
           </div>
           <div className="relative flex h-14 w-14 shrink-0 items-center justify-center">
             <span className="vr-user-ring absolute inset-2 rounded-full" />
@@ -153,7 +153,7 @@ export default function AvatarEditor({
             aria-label="Eraser"
             aria-pressed={tool === "erase"}
             onClick={() => setTool("erase")}
-            className={`h-7 rounded-full border-2 bg-neutral-800 px-2 text-xs ${
+            className={`h-7 rounded-full border-2 bg-vr-panel-2 px-2 text-xs ${
               tool === "erase" ? "border-white" : "border-transparent"
             }`}
           >
@@ -163,19 +163,19 @@ export default function AvatarEditor({
 
         {/* Presets + clear */}
         <div className="mt-3 flex flex-wrap items-center justify-center gap-2 text-xs">
-          <span className="text-neutral-500">Start from:</span>
+          <span className="text-vr-dim">Start from:</span>
           {AVATAR_PRESETS.map((p) => (
             <button
               key={p.name}
               onClick={() => setRows(p.rows)}
-              className="rounded-full bg-neutral-800 px-3 py-1 hover:bg-neutral-700"
+              className="rounded-full bg-vr-panel-2 px-3 py-1 hover:bg-vr-panel-3"
             >
               {p.name}
             </button>
           ))}
           <button
             onClick={() => setRows(EMPTY_AVATAR)}
-            className="rounded-full bg-neutral-800 px-3 py-1 hover:bg-neutral-700"
+            className="rounded-full bg-vr-panel-2 px-3 py-1 hover:bg-vr-panel-3"
           >
             Blank
           </button>
@@ -184,12 +184,12 @@ export default function AvatarEditor({
         <div className="mt-4 flex items-center gap-2">
           <button
             onClick={onReset}
-            className="text-xs text-neutral-400 hover:text-neutral-200"
+            className="text-xs text-vr-muted hover:text-vr-text"
           >
             Use the plain dot
           </button>
           <div className="flex-1" />
-          <button onClick={onClose} className="rounded-full px-4 py-2 text-sm text-neutral-300 hover:bg-neutral-800">
+          <button onClick={onClose} className="rounded-full px-4 py-2 text-sm text-vr-text-2 hover:bg-vr-panel-2">
             Cancel
           </button>
           <button

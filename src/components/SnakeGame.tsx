@@ -364,24 +364,24 @@ export default function SnakeGame({ map, onClose }: { map: MLMap; onClose: () =>
   }, [map, onClose]);
 
   return (
-    <div data-vr-snake className="absolute inset-0 z-30 text-neutral-100">
+    <div data-vr-snake className="absolute inset-0 z-30 text-vr-text">
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full touch-none" />
 
       {/* HUD */}
       <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between p-3 pr-14">
-        <div className="rounded-xl bg-neutral-950/80 px-3 py-2 shadow-lg backdrop-blur">
+        <div className="rounded-xl bg-vr-panel/85 px-3 py-2 shadow-lg backdrop-blur">
           <p className="text-sm font-bold leading-tight">Subway Snake 🐍</p>
-          <p className="text-[11px] text-neutral-400">14th–24th St · 9th–Park Ave</p>
+          <p className="text-[11px] text-vr-muted">14th–24th St · 9th–Park Ave</p>
         </div>
         <div className="pointer-events-auto flex items-center gap-2">
-          <span className="rounded-full bg-neutral-950/80 px-3 py-1.5 text-sm font-semibold text-emerald-300 shadow-lg backdrop-blur">
+          <span className="rounded-full bg-vr-panel/85 px-3 py-1.5 text-sm font-semibold text-emerald-300 shadow-lg backdrop-blur">
             {score}
-            {best > 0 && <span className="text-neutral-500"> · best {best}</span>}
+            {best > 0 && <span className="text-vr-dim"> · best {best}</span>}
           </span>
           <button
             onClick={onClose}
             aria-label="Close snake"
-            className="rounded-full bg-neutral-950/80 px-3 py-1.5 text-sm font-semibold shadow-lg backdrop-blur hover:bg-neutral-800"
+            className="rounded-full bg-vr-panel/85 px-3 py-1.5 text-sm font-semibold shadow-lg backdrop-blur hover:bg-vr-panel-2"
           >
             ✕
           </button>
@@ -390,7 +390,7 @@ export default function SnakeGame({ map, onClose }: { map: MLMap; onClose: () =>
 
       {waiting && !over && (
         <div className="pointer-events-none absolute inset-x-0 bottom-10 flex justify-center">
-          <p className="rounded-full bg-neutral-950/80 px-4 py-2 text-sm text-neutral-200 shadow-lg backdrop-blur">
+          <p className="rounded-full bg-vr-panel/85 px-4 py-2 text-sm text-vr-text shadow-lg backdrop-blur">
             Swipe or use arrow keys · turn at the avenues
           </p>
         </div>
@@ -399,10 +399,10 @@ export default function SnakeGame({ map, onClose }: { map: MLMap; onClose: () =>
       {over && (
         <div
           data-vr-snake-over
-          className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-neutral-950/70"
+          className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-vr-panel/70"
         >
           <p className="text-2xl font-black">Game over</p>
-          <p className="text-neutral-300">
+          <p className="text-vr-text-2">
             Score {score}
             {best > score ? ` · Best ${best}` : score > 0 && score >= best ? " · New best!" : ""}
           </p>
@@ -412,7 +412,7 @@ export default function SnakeGame({ map, onClose }: { map: MLMap; onClose: () =>
           >
             Play again
           </button>
-          <button onClick={onClose} className="text-sm text-neutral-400 hover:text-neutral-200">
+          <button onClick={onClose} className="text-sm text-vr-muted hover:text-vr-text">
             Back to the map
           </button>
         </div>

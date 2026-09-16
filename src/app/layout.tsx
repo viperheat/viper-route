@@ -12,7 +12,7 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body className="bg-neutral-950 text-neutral-100 antialiased">
+      <body className="bg-vr-bg text-vr-text antialiased">
         <Script
           src="https://unpkg.com/maplibre-gl@5.6.1/dist/maplibre-gl.js"
           strategy="beforeInteractive"

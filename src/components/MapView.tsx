@@ -7,6 +7,7 @@ import stationsData from "@/data/stations.json";
 import SnakeGame from "@/components/SnakeGame";
 import AvatarEditor from "@/components/AvatarEditor";
 import { avatarSVG, loadAvatar, saveAvatar, type Avatar } from "@/lib/avatar";
+import { MAP_PALETTE, UI } from "@/lib/theme";
 
 const NYC_FALLBACK: [number, number] = [-73.9857, 40.7484];
 
@@ -59,14 +60,8 @@ const DARK_TEXT = new Set(["N", "Q", "R", "W"]);
 const baseRoute = (r: string) => r.replace(/X$/, "");
 const routeColor = (r: string) => ROUTE_COLORS[baseRoute(r)] ?? "#4b5563";
 
-// Viper Route dark palette — applied over OpenFreeMap's dark base at runtime.
-// Tweak these to restyle the map.
-const PALETTE = {
-  land: "#0c0f14", // blue-slate base
-  water: "#0b1f2b", // deep teal
-  green: "#10241b", // dark emerald parks
-  building: "#171b22", // subtle lift from land
-};
+// Map colors live in src/lib/theme.ts (applied over OpenFreeMap's dark base).
+const PALETTE = MAP_PALETTE;
 
 function Bullet({ route, size = 28 }: { route: string; size?: number }) {
   const label = baseRoute(route);
@@ -244,9 +239,25 @@ export default function MapView() {
               map.setPaintProperty(id, "fill-color", PALETTE.green);
             } else if (lid.includes("building")) {
               map.setPaintProperty(id, "fill-color", PALETTE.building);
+            } else if (lid.includes("residential")) {
+              map.setPaintProperty(id, "fill-color", PALETTE.residential);
             }
-          } else if (layer.type === "line" && lid.includes("water")) {
-            map.setPaintProperty(id, "line-color", PALETTE.water);
+          } else if (layer.type === "line") {
+            const R = PALETTE.road;
+            if (lid.includes("water")) map.setPaintProperty(id, "line-color", PALETTE.water);
+            else if (lid.includes("dashline")) map.setPaintProperty(id, "line-color", R.railDash);
+            else if (lid.startsWith("railway")) map.setPaintProperty(id, "line-color", R.rail);
+            else if (lid.includes("casing")) map.setPaintProperty(id, "line-color", R.casing);
+            else if (lid.includes("motorway_inner")) map.setPaintProperty(id, "line-color", R.motorway);
+            else if (lid.includes("major_inner")) map.setPaintProperty(id, "line-color", R.major);
+            else if (lid.includes("path")) map.setPaintProperty(id, "line-color", R.path);
+            else if (lid.includes("pier")) map.setPaintProperty(id, "line-color", R.pier);
+            else if (lid.startsWith("highway")) map.setPaintProperty(id, "line-color", R.minor);
+          } else if (layer.type === "symbol") {
+            const L = PALETTE.label;
+            const color = lid.startsWith("highway") ? L.road : lid.includes("water") ? L.water : L.place;
+            map.setPaintProperty(id, "text-color", color);
+            map.setPaintProperty(id, "text-halo-color", L.halo);
           }
         } catch {
           // ignore layers that don't accept the property
@@ -257,14 +268,26 @@ export default function MapView() {
     function addStations(map: import("maplibre-gl").Map) {
       if (map.getSource("stations")) return;
       map.addSource("stations", { type: "geojson", data: STATION_FC });
+      // Soft cyan halo under each station, then the crisp dot on top.
+      map.addLayer({
+        id: "station-glow",
+        type: "circle",
+        source: "stations",
+        paint: {
+          "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 4, 13, 9, 15, 14, 17, 20],
+          "circle-color": UI.accent2,
+          "circle-blur": 1,
+          "circle-opacity": ["interpolate", ["linear"], ["zoom"], 10, 0.15, 14, 0.35],
+        },
+      });
       map.addLayer({
         id: "station-dots",
         type: "circle",
         source: "stations",
         paint: {
           "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 2, 13, 4, 15, 6, 17, 8],
-          "circle-color": "#ffffff",
-          "circle-stroke-color": "#10b981",
+          "circle-color": "#0b1220",
+          "circle-stroke-color": UI.accent2,
           "circle-stroke-width": 1.5,
           "circle-opacity": 0.95,
         },
@@ -665,9 +688,9 @@ export default function MapView() {
       {/* Desktop / tablet: static side panel (the phone sheet, docked) */}
       <aside
         data-vr-panel
-        className="hidden text-neutral-100 md:flex md:h-full md:w-[380px] md:shrink-0 md:flex-col md:border-r md:border-neutral-800 md:bg-neutral-900"
+        className="vr-glow-edge hidden text-vr-text md:flex md:h-full md:w-[380px] md:shrink-0 md:flex-col md:border-r md:border-vr-border md:bg-vr-panel"
       >
-        <div className="flex items-center justify-between gap-3 border-b border-neutral-800 px-4 py-3">
+        <div className="flex items-center justify-between gap-3 border-b border-vr-border px-4 py-3">
           <Brand />
           <div className="flex items-center gap-2">
             <TrainsToggle on={trainsOn} onToggle={toggleTrains} where="panel" />
@@ -687,7 +710,7 @@ export default function MapView() {
             </div>
           </>
         ) : (
-          <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-neutral-400">
+          <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-vr-muted">
             {statusText}
           </div>
         )}
@@ -712,7 +735,7 @@ export default function MapView() {
             data-vr-snake-launch
             aria-label="Play Subway Snake"
             title="Play Subway Snake"
-            className={`vr-snake-launch absolute right-3 z-10 rounded-xl bg-neutral-950/80 p-1.5 shadow-lg backdrop-blur hover:bg-neutral-800 ${
+            className={`vr-snake-launch absolute right-3 z-10 rounded-xl bg-vr-panel/85 p-1.5 shadow-lg backdrop-blur hover:bg-vr-panel-2 ${
               selected ? "bottom-[calc(58vh+12px)] md:bottom-8" : "bottom-8"
             }`}
           >
@@ -723,7 +746,7 @@ export default function MapView() {
         {!selected && !showSnake && (
           <div
             data-vr-status
-            className="pointer-events-none absolute bottom-6 left-1/2 z-10 -translate-x-1/2 rounded-full bg-neutral-950/85 px-4 py-2 text-center text-sm text-neutral-100 shadow-lg backdrop-blur md:hidden"
+            className="pointer-events-none absolute bottom-6 left-1/2 z-10 -translate-x-1/2 rounded-full bg-vr-panel/85 px-4 py-2 text-center text-sm text-vr-text shadow-lg backdrop-blur md:hidden"
           >
             {statusText}
           </div>
@@ -734,7 +757,7 @@ export default function MapView() {
             ref={sheetRef}
             data-vr-sheet
             data-vr-sheet-state={expanded ? "expanded" : "peek"}
-            className="absolute inset-x-0 bottom-0 z-20 flex h-[58vh] flex-col rounded-t-2xl bg-neutral-900 text-neutral-100 shadow-2xl md:hidden"
+            className="vr-glow-edge absolute inset-x-0 bottom-0 z-20 flex h-[58vh] flex-col rounded-t-2xl bg-vr-panel text-vr-text shadow-2xl md:hidden"
             style={{ willChange: "transform" }}
           >
             {/* Header (stays visible when peeked) + drag handle */}
@@ -745,7 +768,7 @@ export default function MapView() {
               onPointerUp={onPointerUp}
               className="shrink-0 cursor-grab touch-none select-none px-4 pb-3 pt-2 active:cursor-grabbing"
             >
-              <div className="mx-auto mb-2 h-1.5 w-10 rounded-full bg-neutral-700" />
+              <div className="mx-auto mb-2 h-1.5 w-10 rounded-full bg-vr-panel-3" />
               <StationHeader name={selected.name} subtitle={subtitle} soonest={soonest} />
             </div>
 
@@ -818,7 +841,7 @@ function AvatarChip({
       data-vr-avatar-chip={where}
       title="Your avatar"
       aria-label="Edit your avatar"
-      className="flex h-8 w-8 items-center justify-center rounded-full bg-neutral-950/85 shadow-lg backdrop-blur hover:bg-neutral-800"
+      className="flex h-8 w-8 items-center justify-center rounded-full bg-vr-panel/85 shadow-lg backdrop-blur hover:bg-vr-panel-2"
     >
       {avatar ? (
         <span className="flex" dangerouslySetInnerHTML={{ __html: avatarSVG(avatar, 22) }} />
@@ -832,11 +855,11 @@ function AvatarChip({
 function Brand({ floating = false }: { floating?: boolean }) {
   return (
     <div
-      className={`flex items-center gap-2 text-neutral-100 ${
-        floating ? "rounded-full bg-neutral-950/80 px-3 py-2 shadow-lg backdrop-blur" : ""
+      className={`flex items-center gap-2 text-vr-text ${
+        floating ? "rounded-full bg-vr-panel/85 px-3 py-2 shadow-lg backdrop-blur" : ""
       }`}
     >
-      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500 text-xs font-black text-black">
+      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500 text-xs font-black text-black shadow-[0_0_12px_rgba(52,211,153,.55)]">
         VR
       </span>
       <span className="text-sm font-bold">Viper Route</span>
@@ -859,12 +882,12 @@ function TrainsToggle({
       data-vr-trains-toggle={where}
       aria-pressed={on}
       className={`flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold shadow-lg backdrop-blur ${
-        on ? "bg-neutral-950/85 text-emerald-300" : "bg-neutral-950/70 text-neutral-400"
+        on ? "bg-vr-panel/85 text-emerald-300" : "bg-vr-panel/70 text-vr-muted"
       }`}
     >
       <span
         className={`h-2 w-2 rounded-full ${
-          on ? "bg-emerald-400 shadow-[0_0_6px_#34d399]" : "bg-neutral-600"
+          on ? "bg-emerald-400 shadow-[0_0_6px_#34d399]" : "bg-vr-dim"
         }`}
       />
       Live trains {on ? "on" : "off"}
@@ -885,12 +908,12 @@ function StationHeader({
     <div className="flex items-center justify-between gap-3">
       <div className="min-w-0">
         <h2 className="truncate text-lg font-bold leading-tight">{name}</h2>
-        <p className="text-xs text-neutral-400">{subtitle}</p>
+        <p className="text-xs text-vr-muted">{subtitle}</p>
       </div>
       {soonest && (
         <div className="flex shrink-0 items-center gap-2">
           <Bullet route={soonest.route} size={24} />
-          <span className="text-sm text-neutral-200">
+          <span className="font-mono text-sm tabular-nums text-emerald-300 [text-shadow:0_0_10px_rgba(52,211,153,.45)]">
             {soonest.minutes <= 0 ? "Now" : `${soonest.minutes} min`}
           </span>
         </div>
@@ -905,15 +928,15 @@ function StationBody({ arrivals, footer }: { arrivals: ArrivalsState; footer: st
   return (
     <>
       {arrivals.kind === "loading" && (
-        <p className="py-6 text-center text-sm text-neutral-400">Loading live arrivals…</p>
+        <p className="py-6 text-center text-sm text-vr-muted">Loading live arrivals…</p>
       )}
       {arrivals.kind === "error" && (
-        <p className="py-6 text-center text-sm text-neutral-400">
+        <p className="py-6 text-center text-sm text-vr-muted">
           Couldn’t load arrivals right now. It’ll retry automatically.
         </p>
       )}
       {arrivals.kind === "ok" && arrivals.data.arrivals.length === 0 && (
-        <p className="py-6 text-center text-sm text-neutral-400">
+        <p className="py-6 text-center text-sm text-vr-muted">
           No upcoming trains reported right now.
         </p>
       )}
@@ -923,7 +946,7 @@ function StationBody({ arrivals, footer }: { arrivals: ArrivalsState; footer: st
           <ArrivalColumn title="↓ Southbound" arrivals={south} />
         </div>
       )}
-      <p className="mt-4 border-t border-neutral-800 pt-2 text-center text-[11px] text-neutral-500">
+      <p className="mt-4 border-t border-vr-border pt-2 text-center text-[11px] text-vr-dim">
         {footer}
       </p>
     </>
@@ -933,15 +956,15 @@ function StationBody({ arrivals, footer }: { arrivals: ArrivalsState; footer: st
 function ArrivalColumn({ title, arrivals }: { title: string; arrivals: Arrival[] }) {
   return (
     <div>
-      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-400">{title}</h3>
+      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-vr-muted">{title}</h3>
       {arrivals.length === 0 ? (
-        <p className="text-sm text-neutral-600">—</p>
+        <p className="text-sm text-vr-dim">—</p>
       ) : (
         <ul className="flex flex-col gap-2">
           {arrivals.map((a, i) => (
             <li key={i} className="flex items-center gap-2">
               <Bullet route={a.route} />
-              <span className="text-sm text-neutral-200">
+              <span className="font-mono text-sm tabular-nums text-vr-text">
                 {a.minutes <= 0 ? "Now" : `${a.minutes} min`}
               </span>
             </li>

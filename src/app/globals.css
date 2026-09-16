@@ -1,44 +1,60 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* Viper Route "neon night" UI tokens — mirrored in src/lib/theme.ts */
+@theme {
+  --color-vr-bg: #070b14;
+  --color-vr-panel: #0b1220;
+  --color-vr-panel-2: #131c31;
+  --color-vr-panel-3: #1b2744;
+  --color-vr-border: rgba(56, 189, 248, 0.16);
+  --color-vr-text: #e6edf7;
+  --color-vr-text-2: #b7c3dc;
+  --color-vr-muted: #7c8db5;
+  --color-vr-dim: #4b5878;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+:root { color-scheme: dark; }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-vr-bg);
+  color: var(--color-vr-text);
+  font-family: var(--font-sans);
 }
+
+/* Panels: hairline cyan edge with a faint outer glow */
+.vr-glow-edge {
+  box-shadow:
+    0 0 0 1px var(--color-vr-border),
+    0 0 28px rgba(34, 211, 238, 0.08),
+    0 -8px 32px rgba(0, 0, 0, 0.5);
+}
+
+/* Map chrome: MapLibre controls in theme colors */
+.maplibregl-ctrl-group {
+  background: #0b1220e6 !important;
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.16), 0 4px 16px rgba(0, 0, 0, 0.5) !important;
+}
+.maplibregl-ctrl-group button + button { border-top-color: rgba(56, 189, 248, 0.12) !important; }
+.maplibregl-ctrl button .maplibregl-ctrl-icon { filter: invert(1) hue-rotate(180deg) brightness(1.1); }
+.maplibregl-ctrl-attrib { background: rgba(7, 11, 20, 0.7) !important; color: #7c8db5 !important; }
+.maplibregl-ctrl-attrib a { color: #a5b4d6 !important; }
 
 /* Viper Route: "you are here" pulsing dot marker */
 .vr-user-dot {
   width: 16px;
   height: 16px;
   border-radius: 9999px;
-  background: #10b981; /* emerald-500 */
+  background: #22d3ee; /* cyan — "you" */
   border: 3px solid #ffffff;
-  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.4);
+  box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.4), 0 0 14px rgba(34, 211, 238, 0.7);
   animation: vr-pulse 2s ease-out infinite;
 }
 @keyframes vr-pulse {
-  0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5); }
-  70% { box-shadow: 0 0 0 14px rgba(16, 185, 129, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+  0% { box-shadow: 0 0 0 0 rgba(34, 211, 238, 0.55), 0 0 14px rgba(34, 211, 238, 0.7); }
+  70% { box-shadow: 0 0 0 16px rgba(34, 211, 238, 0), 0 0 14px rgba(34, 211, 238, 0.7); }
+  100% { box-shadow: 0 0 0 0 rgba(34, 211, 238, 0), 0 0 14px rgba(34, 211, 238, 0.7); }
 }
 
 /* Corner snake launcher: a slow wiggle so it reads as alive */
@@ -56,13 +72,13 @@ body {
   height: 36px;
   border-radius: 9999px;
   cursor: pointer;
-  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.4);
+  box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.4), 0 0 14px rgba(34, 211, 238, 0.7);
   animation: vr-pulse 2s ease-out infinite;
 }
 .vr-user-avatar svg { display: block; }
 .vr-user-dot { cursor: pointer; }
 /* Ring used behind the preview in the avatar editor */
 .vr-user-ring {
-  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.4);
+  box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.4);
   animation: vr-pulse 2s ease-out infinite;
 }
